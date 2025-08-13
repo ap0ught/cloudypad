@@ -35,10 +35,16 @@ update_versions_in_package_files() {
   sed -i "s/cloudypadVersion = \"$VERSION_REGEX\";/cloudypadVersion = \"$release_version\";/" flake.nix
 
   # Make sure the hash of cloudypad.sh matches the one in pkgs.fetchurl cloudypad.sh from flake.nix
-  NIX_SHA256=$(nix-prefetch-url "file://$PWD/cloudypad.sh" --type sha256)
-  sed -i "s/hash = \"sha256:.*\";/hash = \"sha256:${NIX_SHA256}\";/" flake.nix
-}
+  # Compute SRI sha256 using OpenSSL (avoids nix-prefetch-url dependency)
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "Error: openssl is required to compute SRI hash." >&2
+    exit 1
+  fi
 
+  CLOUDYPAD_SRI=$(openssl dgst -sha256 -binary "$PWD/cloudypad.sh" | openssl base64 -A)
+  # Update either old style (sha256:...) or SRI (sha256-...) in flake.nix
+  sed -i "s|hash = \"sha256[^\"]*\";|hash = \"sha256-${CLOUDYPAD_SRI}\";|" flake.nix
+}
 
 create_push_release_branch() {
   release_version=$1
@@ -46,22 +52,43 @@ create_push_release_branch() {
 
   read -p "New version: $release_version with release branch '$release_branch'. Continue? (If something goes wrong, delete branch and try again)"
 
-  echo "Checking out new branch '$release_branch'..."
+  echo "Checking out branch '$release_branch'..."
 
-  git checkout -b "$release_branch"
+  # Prefer reusing existing branch (local or remote) instead of failing
+  if git show-ref --verify --quiet "refs/heads/$release_branch"; then
+    echo "Branch '$release_branch' exists locally. Reusing it."
+    git checkout "$release_branch"
+  else
+    if git ls-remote --exit-code --heads origin "$release_branch" >/dev/null 2>&1; then
+      echo "Branch '$release_branch' exists on origin. Creating local tracking branch."
+      git fetch origin "$release_branch:$release_branch"
+      git checkout "$release_branch"
+    else
+      echo "Creating new branch '$release_branch'..."
+      git checkout -b "$release_branch"
+    fi
+  fi
 
-  echo "Commiting and pushing version changes to $release_branch..."
+  echo "Committing and pushing version changes to $release_branch..."
 
   git add package.json cloudypad.sh install.sh flake.nix
-  git commit -m "chore: prepare release $release_version - update version in package files and scripts"
-  
+  if git diff --cached --quiet; then
+    echo "No changes to commit."
+  else
+    git commit -m "chore: prepare release $release_version - update version in package files and scripts"
+  fi
+
   if [ "$CLOUDYPAD_RELEASE_DRY_RUN" = true ]; then
     echo "Dry run enabled: Skipping git push."
   else
-    git push
+    # Ensure upstream is set the first time
+    if git rev-parse --abbrev-ref --symbolic-full-name @{u} >/dev/null 2>&1; then
+      git push
+    else
+      git push -u origin "$release_branch"
+    fi
   fi
 }
-
 create_release_pr_and_merge_in_release_branch() {
   release_version=$1
   release_branch="release-$release_version"
