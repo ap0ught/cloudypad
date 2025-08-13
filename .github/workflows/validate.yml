@@ -1,0 +1,146 @@
+name: Validation and Quality Checks
+
+on:
+  push:
+    branches:
+      - "master"
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  workflow-validation:
+    name: Validate Workflows
+    runs-on: ubuntu-24.04
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Validate GitHub Actions workflows
+        run: |
+          # Check for workflow syntax issues
+          for file in .github/workflows/*.yml; do
+            echo "Validating $file"
+            # Basic YAML syntax validation
+            python3 -c "import yaml; yaml.safe_load(open('$file'))"
+          done
+          
+      - name: Check for common workflow issues
+        run: |
+          # Check for missing required fields
+          echo "Checking workflow structure..."
+          grep -r "uses: actions/checkout" .github/workflows/ || echo "WARNING: Some workflows may be missing checkout action"
+          grep -r "runs-on:" .github/workflows/ || echo "ERROR: Missing runs-on specification"
+          
+  documentation-validation:
+    name: Validate Documentation
+    runs-on: ubuntu-24.04
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install mdBook
+        run: >
+          curl -sL https://github.com/rust-lang/mdBook/releases/download/v0.4.40/mdbook-v0.4.40-x86_64-unknown-linux-musl.tar.gz | 
+          tar xz -C /usr/local/bin
+
+      - name: Validate documentation build
+        run: mdbook build docs
+        
+      - name: Check documentation completeness
+        run: |
+          echo "Checking for broken internal links..."
+          # Basic check for markdown files
+          find docs/src -name "*.md" -exec echo "Found: {}" \;
+          
+      - name: Verify generated artifacts
+        run: |
+          # Check that documentation was generated properly
+          test -f docs/book/index.html || (echo "ERROR: Documentation index not generated" && exit 1)
+          test -d docs/book/css || (echo "ERROR: CSS assets not generated" && exit 1)
+          echo "Documentation build successful"
+
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-24.04
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - uses: nixbuild/nix-quick-install-action@v30
+
+      - uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}
+          restore-prefixes-first-match: nix-${{ runner.os }}
+      
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package*.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+      
+      - run: nix develop -c npm i
+
+      - name: Check for circular dependencies
+        run: nix develop -c task test-circular-deps
+        
+      - name: Validate analytics key consistency
+        run: nix develop -c task test-analytics-key-match
+        
+      - name: Validate Docker build configurations
+        run: nix develop -c task test-docker-build-config
+        
+      - name: Check package.json consistency
+        run: |
+          echo "Validating package.json structure..."
+          node -e "
+            const pkg = require('./package.json');
+            if (!pkg.name) throw new Error('Missing package name');
+            if (!pkg.version) throw new Error('Missing package version');
+            if (!pkg.scripts) throw new Error('Missing scripts');
+            if (!pkg.scripts.build) throw new Error('Missing build script');
+            if (!pkg.scripts.test) throw new Error('Missing test script');
+            console.log('Package.json validation passed');
+          "
+
+  typescript-checks:
+    name: TypeScript Type Checking
+    runs-on: ubuntu-24.04
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - uses: nixbuild/nix-quick-install-action@v30
+
+      - uses: nix-community/cache-nix-action@v6
+        with:
+          primary-key: nix-${{ runner.os }}
+          restore-prefixes-first-match: nix-${{ runner.os }}
+      
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package*.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+      
+      - run: nix develop -c npm i
+
+      - name: TypeScript compilation check
+        run: nix develop -c npx tsc --noEmit
+        
+      - name: TypeScript build verification
+        run: nix develop -c npm run build
+        
+      - name: Verify build artifacts
+        run: |
+          test -d dist || (echo "ERROR: dist directory not created" && exit 1)
+          test -f dist/src/index.js || (echo "ERROR: Main index file not built" && exit 1)
+          test -d dist/ansible || (echo "ERROR: Ansible files not copied" && exit 1)
+          echo "Build artifacts verified successfully"

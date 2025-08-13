@@ -163,6 +163,10 @@ tasks:
   test-install-script:
     - cmd: test/shell/test-install.sh
 
+  # Validate Docker build configurations
+  test-docker-build-config:
+    - cmd: test/shell/test-docker-build-config.sh
+
   # Smoke test to check container image is working
   test-container-smoke-test:
     cmds:

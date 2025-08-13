@@ -39,6 +39,9 @@ jobs:
 
       - name: Run standard unit tests
         run: nix develop -c task test-unit
+        
+      - name: Verify TypeScript compilation
+        run: nix develop -c task test-compile
 
   build:
     name: Build Core container image
@@ -114,7 +117,7 @@ jobs:
 
   test-install:
     name: Test install/run Ubuntu
-    if: "!startsWith(github.head_ref, 'release/')" # Install test will fail on release branch as version won't mach
+    if: "!startsWith(github.head_ref, 'release/')" # Install test will fail on release branch as version won't match
     runs-on: "${{ matrix.os }}"
     strategy:
       matrix:
@@ -138,7 +141,7 @@ jobs:
 
   test-install-macos:
     name: Test install/run MacOS
-    if: "!startsWith(github.head_ref, 'release/')" # Install test will fail on release branch as version won't mach
+    if: "!startsWith(github.head_ref, 'release/')" # Install test will fail on release branch as version won't match
     runs-on: "${{ matrix.os }}"
     strategy:
       matrix:
@@ -168,7 +171,7 @@ jobs:
 
   test-install-container:
     name: Test install/run in containers
-    if: "!startsWith(github.head_ref, 'release/')" # Install test will fail on release branch as version won't mach
+    if: "!startsWith(github.head_ref, 'release/')" # Install test will fail on release branch as version won't match
     runs-on: ubuntu-22.04
     
     # env:
