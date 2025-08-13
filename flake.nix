@@ -18,7 +18,7 @@
 
             src = pkgs.fetchurl {
               url = "https://raw.githubusercontent.com/ap0ught/cloudypad/v${cloudypadVersion}/cloudypad.sh";
-              hash = "sha256:1l400pwiaw721s0zscanvwiypxj90i01sp42s2bp1yhg3226l5rj";
+              hash = "sha256-S+ZJGdpOfOT2oDXwMxlgpIl0SO2dDoeExT1QwbVGZZ8=";
             };
 
             phases = [ "installPhase" ];
