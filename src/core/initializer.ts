@@ -47,7 +47,7 @@ export class InstanceInitializer<ST extends InstanceStateV1> {
             provisionInput.ssh.privateKeyContentBase64 = toBase64(privateKeyContent)
         }
 
-        const state = await new StateInitializer({
+        await new StateInitializer({
             stateWriter: this.args.stateWriter,
             stateParser: this.args.stateParser,
             input: {
