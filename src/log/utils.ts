@@ -1,4 +1,4 @@
-import { Logger as InternalLogger } from "tslog";
+import {Logger as InternalLogger} from "tslog";
 
 //
 // Logging utility used globally
@@ -26,8 +26,7 @@ export type Logger = InternalLogger<ILogObj>
  * @returns 
  */
 export function getLogger(name: string, args = { minLevel: logVerbosity }): Logger {
-    const logger = new InternalLogger<ILogObj>({ name: name, minLevel: args.minLevel})
-    return logger
+    return new InternalLogger<ILogObj>({name: name, minLevel: args.minLevel})
 }
 
 export function getLogVerbosity(){
