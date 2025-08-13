@@ -36,6 +36,9 @@ jobs:
       
       - run: nix develop -c npm i
 
-      # Only S3 integ test on CI for now as it only depends on container not external accounts and runs quickly
-      - name: Run integration tests
+      # Run stable integration tests that don't require external accounts
+      - name: Run S3 side effects integration tests
         run: nix develop -c task test-integ-s3-side-effects
+        
+      - name: Run dummy provider integration tests
+        run: nix develop -c task test-integ-provider-dummy
