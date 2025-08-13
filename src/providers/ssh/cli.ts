@@ -161,7 +161,7 @@ export class SshInputPrompter extends AbstractInputPrompter<SshCreateCliArgs, Ss
             `It's best to use a fresh install of Ubuntu to avoid potential issues with existing NVIDIA drivers, Docker installation or other components` +
             ` which may conflict with Cloudy Pad installation process. Future versions will support more Linux distributions and be more flexible.\n` +
             `\n` +
-            `If you encounter problems or have feedback please create an issue on GitHub: https://github.com/PierreBeucher/cloudypad/issues\n` +
+            `If you encounter problems or have feedback please create an issue on GitHub: https://github.com/ap0ught/cloudypad/issues\n` +
             `\n` +
             `Press enter to continue...`,
         })
@@ -202,7 +202,7 @@ export class SshCliCommandGenerator extends CliCommandGenerator {
                     console.error("")
                     console.error("Oops, something went wrong 😨 Full error is shown above.")
                     console.error("")
-                    console.error("If you think this is a bug, please file an issue with full error: https://github.com/PierreBeucher/cloudypad/issues")
+                    console.error("If you think this is a bug, please file an issue with full error: https://github.com/ap0ught/cloudypad/issues")
                     console.error("")
                     console.error("⚠️ Your instance was not created successfully. To cleanup resources and avoid leaving orphaned resources which may be charged, run:")
                     console.error("")

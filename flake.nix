@@ -17,8 +17,8 @@
             version = cloudypadVersion;
 
             src = pkgs.fetchurl {
-              url = "https://raw.githubusercontent.com/PierreBeucher/cloudypad/v${cloudypadVersion}/cloudypad.sh";
-              hash = "sha256:0a2z10agbqwjh3d0139asa0bl5amw1aykz0kh8dqpw12l5fbj6gh";
+              url = "https://raw.githubusercontent.com/ap0ught/cloudypad/v${cloudypadVersion}/cloudypad.sh";
+              hash = "sha256:1l400pwiaw721s0zscanvwiypxj90i01sp42s2bp1yhg3226l5rj";
             };
 
             phases = [ "installPhase" ];
@@ -29,7 +29,7 @@
 
             meta = with pkgs.lib; {
               description = "Cloudypad script";
-              homepage = "https://github.com/PierreBeucher/cloudypad";
+              homepage = "https://github.com/ap0ught/cloudypad";
               license = licenses.agpl3Plus;
             };
           };

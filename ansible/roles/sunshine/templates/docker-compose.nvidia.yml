@@ -25,7 +25,7 @@ services:
 
 {% if nvidia_gpu_model in nvidia_datacenter_gpu_models %}
       # Datacenter (Tesla) GPUs have a maximum resolution of 2560x1600
-      # See https://github.com/PierreBeucher/cloudypad/issues/144
+      # See https://github.com/ap0ught/cloudypad/issues/144
       # and https://forums.developer.nvidia.com/t/datacenter-gpus-are-capped-to-2560x1600-resolution-for-headless-output-unlike-consumer-gpus/309845
       CLOUDYPAD_SCREEN_MAX_WIDTH: "2560"
       CLOUDYPAD_SCREEN_MAX_HEIGHT: "1600"

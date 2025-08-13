@@ -28,7 +28,7 @@
 Install latest version of `cloudypad` CLI:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PierreBeucher/cloudypad/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ap0ught/cloudypad/master/install.sh | bash
 ```
 
 ### MacOS
@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/PierreBeucher/cloudypad/master/inst
 Install latest version of `cloudypad` CLI:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PierreBeucher/cloudypad/master/install.sh | zsh
+curl -fsSL https://raw.githubusercontent.com/ap0ught/cloudypad/master/install.sh | zsh
 ```
 
 **[OrbStack](https://orbstack.dev/) is recommended** over Docker Desktop as it's more compatible for Cloudy Pad usage. 
@@ -56,8 +56,8 @@ Cloudy Pad is packaged as a [Nix Flake](https://nixos.wiki/wiki/flakes), see [`f
 You can include it in your NixOS config or run directly with `nix run`:
 
 ```sh
-nix run github:PierreBeucher/cloudypad create
-nix run github:PierreBeucher/cloudypad -- --version
+nix run github:ap0ught/cloudypad create
+nix run github:ap0ught/cloudypad -- --version
 ```
 
 ## Upgrade

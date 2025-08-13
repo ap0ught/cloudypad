@@ -43,7 +43,7 @@ If that's not your cup of tea, **you might prefer to use [Cloudy Pad App](https:
 Install latest version of `cloudypad` CLI:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/PierreBeucher/cloudypad/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ap0ught/cloudypad/master/install.sh | bash
 ```
 
 [➡️ See Installation page](./installation.md) for more installation methods on Linux, Mac and Windows.
@@ -101,4 +101,4 @@ cloudypad stop mypad
 
 ## Problem ?
 
-😱 Something went wrong? See _Help and Troubleshooting_ section on the left, [FAQ and known issues](./help/faq.md) or [create an issue](https://github.com/PierreBeucher/cloudypad/issues)
+😱 Something went wrong? See _Help and Troubleshooting_ section on the left, [FAQ and known issues](./help/faq.md) or [create an issue](https://github.com/ap0ught/cloudypad/issues)

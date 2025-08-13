@@ -64,7 +64,7 @@ If this is the first time you connect to your instance, it may take a few minute
 
 ### I Found an bug or I have a suggestion
 
-If you found a bug or have a suggestion, [please report an issue](https://github.com/PierreBeucher/cloudypad/issues). Thanks for your feedback !
+If you found a bug or have a suggestion, [please report an issue](https://github.com/ap0ught/cloudypad/issues). Thanks for your feedback !
 
 ### How does all of this work?
 

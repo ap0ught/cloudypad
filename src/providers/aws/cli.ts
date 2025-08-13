@@ -239,7 +239,7 @@ export class AwsCliCommandGenerator extends CliCommandGenerator {
                     console.error("")
                     console.error("Oops, something went wrong 😨 Full error is shown above.")
                     console.error("")
-                    console.error("If you think this is a bug, please file an issue with full error: https://github.com/PierreBeucher/cloudypad/issues")
+                    console.error("If you think this is a bug, please file an issue with full error: https://github.com/ap0ught/cloudypad/issues")
                     console.error("")
                     console.error("⚠️ Your instance was not created successfully. To cleanup resources and avoid leaving orphaned resources which may be charged, run:")
                     console.error("")

@@ -39,7 +39,7 @@ send_analytics_event "cli_install_start"
 
 echo "Installing Cloudy Pad version $CLOUDYPAD_SCRIPT_REF"
 
-CLOUDYPAD_SCRIPT_URL="https://raw.githubusercontent.com/PierreBeucher/cloudypad/$CLOUDYPAD_SCRIPT_REF/cloudypad.sh"
+CLOUDYPAD_SCRIPT_URL="https://raw.githubusercontent.com/ap0ught/cloudypad/$CLOUDYPAD_SCRIPT_REF/cloudypad.sh"
 # ===
 
 # Constants, do not override
@@ -145,7 +145,7 @@ case "${SHELL_NAME}" in
         echo "         To finalize installation please ensure $INSTALL_DIR is on your \$PATH"
         echo "         Otherwise you may not be able to run Cloudy Pad CLI."
         echo "         Alternatively, use directly $SCRIPT_PATH to run Cloudy Pad CLI."
-        echo "         If you think this is a bug, please create an issue: https://github.com/PierreBeucher/cloudypad/issues"
+        echo "         If you think this is a bug, please create an issue: https://github.com/ap0ught/cloudypad/issues"
         ;;
 esac
 
@@ -172,8 +172,8 @@ echo "Get started by creating a Cloudy Pad instance:"
 echo
 echo "  cloudypad create"
 echo 
-echo "If you enjoy Cloudy Pad, please star us ⭐ https://github.com/PierreBeucher/cloudypad"
-echo "🐛 Found a bug? Create an issue: https://github.com/PierreBeucher/cloudypad/issues"
+echo "If you enjoy Cloudy Pad, please star us ⭐ https://github.com/ap0ught/cloudypad"
+echo "🐛 Found a bug? Create an issue: https://github.com/ap0ught/cloudypad/issues"
 echo
 
 send_analytics_event "cli_install_finish"
