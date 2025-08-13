@@ -92,6 +92,9 @@ jobs:
       - name: Validate analytics key consistency
         run: nix develop -c task test-analytics-key-match
         
+      - name: Validate Docker build configurations
+        run: nix develop -c task test-docker-build-config
+        
       - name: Check package.json consistency
         run: |
           echo "Validating package.json structure..."
