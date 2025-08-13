@@ -1,11 +1,11 @@
-import { getLogger } from "../log/utils"
-import { CLOUDYPAD_PROVIDER } from "../core/const"
-import { StateInitializer } from "../core/state/initializer"
-import { InstanceStateV1 } from "./state/state"
-import { generatePrivateSshKey } from "../tools/ssh"
-import { toBase64 } from "../tools/base64"
-import { StateWriter } from "./state/writer"
-import { GenericStateParser } from "./state/parser"
+import {getLogger} from "../log/utils"
+import {CLOUDYPAD_PROVIDER} from "./const"
+import {StateInitializer} from "./state/initializer"
+import {InstanceStateV1} from "./state/state"
+import {generatePrivateSshKey} from "../tools/ssh"
+import {toBase64} from "../tools/base64"
+import {StateWriter} from "./state/writer"
+import {GenericStateParser} from "./state/parser"
 
 export interface InstanceInitializerArgs<ST extends InstanceStateV1> {
     provider: CLOUDYPAD_PROVIDER
@@ -18,7 +18,7 @@ export interface InstanceInitializerArgs<ST extends InstanceStateV1> {
  */
 export class InstanceInitializer<ST extends InstanceStateV1> {
 
-    protected readonly logger = getLogger(InstanceInitializer.name)
+    private readonly logger = getLogger(InstanceInitializer.name)
     protected readonly args: InstanceInitializerArgs<ST>
 
     constructor(args: InstanceInitializerArgs<ST>){
@@ -44,8 +44,7 @@ export class InstanceInitializer<ST extends InstanceStateV1> {
             !provisionInput.ssh.passwordBase64
         ) {
             const privateKeyContent = generatePrivateSshKey()
-            const privateKeyContentBase64 = toBase64(privateKeyContent)
-            provisionInput.ssh.privateKeyContentBase64 = privateKeyContentBase64
+            provisionInput.ssh.privateKeyContentBase64 = toBase64(privateKeyContent)
         }
 
         const state = await new StateInitializer({

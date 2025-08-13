@@ -1,4 +1,3 @@
-import { CLOUDYPAD_PROVIDER } from "../core/const"
 import { CreateCliArgs } from "./command"
 import { InputPrompter, UserVoluntaryInterruptionError } from "./prompter"
 import { confirm } from '@inquirer/prompts'

@@ -5,8 +5,9 @@ import { Logger as InternalLogger } from "tslog";
 //
 
 /* eslint-disable @typescript-eslint/no-empty-object-type */
-interface ILogObj {
-
+export interface ILogObj {
+    // This interface is intentionally empty
+    // It's used as a generic type parameter for the tslog logger
 }
 
 /**
