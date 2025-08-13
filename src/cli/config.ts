@@ -150,7 +150,8 @@ export class CliConfigManager {
             this.logger.debug(`Reading config at ${this.configPath}`)
 
             if (!fs.existsSync(this.configPath)) {
-                throw new Error(`Config file not found at ${this.configPath}`)
+                this.logger.error(`Config file not found at ${this.configPath}`)
+                return {} // Return empty object to be handled by the caller
             }
 
             const rawConfig = fs.readFileSync(this.configPath, 'utf-8')
