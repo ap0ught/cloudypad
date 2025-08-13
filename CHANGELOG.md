@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/ap0ught/cloudypad/compare/v0.36.0...v0.37.0) (2025-08-13)
+
+
+### Features
+
+* **release:** enhance release process with run_release_please function and CI job monitoring ([49c1a5c](https://github.com/ap0ught/cloudypad/commit/49c1a5c290e81fcf317e68f5f0871e425db98c8b))
+
 ## [0.36.0](https://github.com/ap0ught/cloudypad/compare/v0.35.0...v0.36.0) (2025-08-13)
 
 
