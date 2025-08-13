@@ -9,7 +9,7 @@ may not be available the next time you run your instance. Here's why:
 
 Cloudy Pad runs inside a container. This means that any packages you install or system updates you make outside of standard usage may **NOT persist**: the container may be re-created every time your instance starts or when you make a Cloudy Pad version upgrade. 
 
-If you know what you are doing, go ahead! We'd actually love to hear about your sudo use cases: share them on [Discord](https://discord.gg/QATA3b9TTa) or [GitHub](https://github.com/ap0ught/cloudypad/issues) so we can consider integrating them natively in Cloudy Pad.
+If you know what you are doing, go ahead! We'd actually love to hear about your sudo use cases: share them on [Discord](https://discord.gg/QATA3b9TTa) or [GitHub](https://github.com/pierrebeucher/cloudypad/issues) so we can consider integrating them natively in Cloudy Pad.
 
 Keep in mind `sudo` commands can break things and we may not be able to provide support for issues caused by `sudo`-related usage.
 

@@ -4,7 +4,7 @@ Use SSH provider to transform your own machine or server into a Cloud gaming ins
 
 ## SSH Provider is still experimental 🧪
 
-SSH provider is freshly from the oven and may have some limitations or bugs. Please [Create an issue](https://github.com/ap0ught/cloudypad/issues) or [reach us on Discord](https://discord.gg/QATA3b9TTa) if you encounter problems.
+SSH provider is freshly from the oven and may have some limitations or bugs. Please [Create an issue](https://github.com/pierrebeucher/cloudypad/issues) or [reach us on Discord](https://discord.gg/QATA3b9TTa) if you encounter problems.
 
 ## Pre-requisites
 

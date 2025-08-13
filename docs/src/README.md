@@ -30,7 +30,7 @@ Cloudy Pad lets you **deploy a Cloud gaming instance on your own server or using
 - 🚀 [Follow Getting started guide](./getting-started.md) to deploy your Cloudy Pad instance
 - 💰 [Understand Cloud provider costs](./cost) - Cloudy Pad itself is free, but Cloud provider usage is not. Make sure you understand Cloud costs before deploying your instance 😉
 - Need help ? A question ? [Come chat with us on Discord](https://discord.com/invite/QATA3b9TTa)
-- 🐛 Found a bug ? Have an issue ? [Create an issue on GitHub](https://github.com/ap0ught/cloudypad)
+- 🐛 Found a bug ? Have an issue ? [Create an issue on GitHub](https://github.com/pierrebeucher/cloudypad)
 
 ## Development status 🧪
 
