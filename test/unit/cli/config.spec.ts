@@ -167,7 +167,7 @@ describe('ConfigManager', () => {
 
             // load() should work even without config file by returning defaults
             const loadedConfig = configManager.load()
-            
+
             // Should return a valid config with default values
             assert.ok(loadedConfig.analytics, 'Should have analytics config')
             assert.ok(loadedConfig.analytics.posthog, 'Should have posthog config')

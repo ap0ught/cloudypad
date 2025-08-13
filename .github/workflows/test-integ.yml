@@ -39,6 +39,6 @@ jobs:
       # Run stable integration tests that don't require external accounts
       - name: Run S3 side effects integration tests
         run: nix develop -c task test-integ-s3-side-effects
-        
+
       - name: Run dummy provider integration tests
         run: nix develop -c task test-integ-provider-dummy

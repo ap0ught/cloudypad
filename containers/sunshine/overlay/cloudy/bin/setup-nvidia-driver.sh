@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# 
+#
 # Some NVIDIA drivers components are required in container
 # to use Nvidia options of X server
 # and ensure games are running on GPU

@@ -88,7 +88,7 @@ class CloudyPadGCEInstance extends pulumi.ComponentResource {
             networkInterfaces: [{
                 network: network.id,
                 subnetwork: subnet.id,
-                accessConfigs: [{ 
+                accessConfigs: [{
                     natIp: publicIp ? publicIp.address : undefined,
                     networkTier: "STANDARD",
                 }],

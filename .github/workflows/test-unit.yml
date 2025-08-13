@@ -39,7 +39,7 @@ jobs:
 
       - name: Run standard unit tests
         run: nix develop -c task test-unit
-        
+
       - name: Verify TypeScript compilation
         run: nix develop -c task test-compile
 
