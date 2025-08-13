@@ -130,7 +130,7 @@ export class InteractiveInstanceInitializer<
         }
     }
 
-    private analyticsEvent(event: string, additionalProperties?: Record<string, any>) {
+    private analyticsEvent(event: string, additionalProperties?: Record<string, unknown>) {
         this.analytics.sendEvent(event, { 
             provider: this.args.providerClient.getProviderName(), 
             ...additionalProperties 

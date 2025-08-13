@@ -39,26 +39,26 @@ export class InstanceManagerBuilder {
 
         switch(providerClient){
             case CLOUDYPAD_PROVIDER_SCALEWAY:
-                const scalewayProviderClient = new ScalewayProviderClient({ config: this.config })
-                return scalewayProviderClient.getInstanceManagerFor(state)
+                { const scalewayProviderClient = new ScalewayProviderClient({ config: this.config })
+                return scalewayProviderClient.getInstanceManagerFor(state) }
             case CLOUDYPAD_PROVIDER_DUMMY:
-                const dummyProviderClient = new DummyProviderClient({ config: this.config })
-                return dummyProviderClient.getInstanceManagerFor(state)
+                { const dummyProviderClient = new DummyProviderClient({ config: this.config })
+                return dummyProviderClient.getInstanceManagerFor(state) }
             case CLOUDYPAD_PROVIDER_AZURE:
-                const azureProviderClient = new AzureProviderClient({ config: this.config })
-                return azureProviderClient.getInstanceManagerFor(state)
+                { const azureProviderClient = new AzureProviderClient({ config: this.config })
+                return azureProviderClient.getInstanceManagerFor(state) }
             case CLOUDYPAD_PROVIDER_GCP:
-                const gcpProviderClient = new GcpProviderClient({ config: this.config })
-                return gcpProviderClient.getInstanceManagerFor(state)
+                { const gcpProviderClient = new GcpProviderClient({ config: this.config })
+                return gcpProviderClient.getInstanceManagerFor(state) }
             case CLOUDYPAD_PROVIDER_AWS:
-                const awsProviderClient = new AwsProviderClient({ config: this.config })
-                return awsProviderClient.getInstanceManagerFor(state)
+                { const awsProviderClient = new AwsProviderClient({ config: this.config })
+                return awsProviderClient.getInstanceManagerFor(state) }
             case CLOUDYPAD_PROVIDER_PAPERSPACE:
-                const paperspaceProviderClient = new PaperspaceProviderClient({ config: this.config })
-                return paperspaceProviderClient.getInstanceManagerFor(state)
+                { const paperspaceProviderClient = new PaperspaceProviderClient({ config: this.config })
+                return paperspaceProviderClient.getInstanceManagerFor(state) }
             case CLOUDYPAD_PROVIDER_SSH:
-                const localProviderClient = new SshProviderClient({ config: this.config })
-                return localProviderClient.getInstanceManagerFor(state)
+                { const localProviderClient = new SshProviderClient({ config: this.config })
+                return localProviderClient.getInstanceManagerFor(state) }
             default:
                 throw new Error(`Provider ${providerClient} not supported`)
         }
