@@ -36,7 +36,7 @@ fi
 docker build --help > /dev/null || {
     echo "❌ Docker build not available"
     exit 1
-}
+check_docker_available
 
 # We can't actually validate syntax without building, but we can check file existence and basic structure
 echo "✅ Sunshine Dockerfile found and accessible"
