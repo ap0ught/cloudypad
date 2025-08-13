@@ -104,7 +104,18 @@ create_push_release_branch() {
     fi
   fi
 }
-
+run_release_please() {
+  if command -v npx >/dev/null 2>&1; then
+    npx --yes release-please "$@"
+  elif command -v npm >/dev/null 2>&1; then
+    npm exec --yes -- release-please "$@"
+  elif command -v release-please >/dev/null 2>&1; then
+    release-please "$@"
+  else
+    echo "Error: neither npx, npm, nor release-please found. Install Node.js or 'npm i -g release-please'." >&2
+    exit 1
+  fi
+}
 create_release_pr_and_merge_in_release_branch() {
   release_version=$1
   release_branch="release-$release_version"
@@ -115,82 +126,88 @@ create_release_pr_and_merge_in_release_branch() {
   fi
 
   echo "Creating release PR..."
-
-  npx --yes release-please release-pr \
-      --repo-url https://github.com/ap0ught/cloudypad \
-      --token $GITHUB_TOKEN \
-      --target-branch $release_branch
+  run_release_please release-pr \
+    --repo-url https://github.com/ap0ught/cloudypad \
+    --token "$GITHUB_TOKEN" \
+    --target-branch "$release_branch"
 
   echo "Release is ready to be merged in release branch."
-
-  gh pr merge "release-please--branches--$release_branch--components--cloudypad" --merge
+  gh pr merge "release-please--branches--$release_branch--components--cloudypad" --merge || true
 
   echo "Pulling Release Please changes in $release_branch..."
-
   git pull
 
-  # Release has been merged in release branch
-  # Create Git tag and GitHub release
-  # Git tag will result in new Docker images being pushed
-  npx release-please github-release \
+  echo "Creating GitHub release for v$release_version (as prerelease)..."
+  run_release_please github-release \
     --repo-url https://github.com/ap0ught/cloudypad \
-    --token=${GITHUB_TOKEN} \
-    --target-branch $release_branch \
+    --token="$GITHUB_TOKEN" \
+    --target-branch "$release_branch" \
     --prerelease
 
-  # Despite using --prerelease, release-please github-release will publish release as latest
-  # Ensure release is prerelease with subsequent command
-  current_release=$(gh release list -L 1 | cut -d$'\t' -f1)
-  echo "Found release: $current_release - marking it as prerelease"
-  gh release edit "${current_release}" --prerelease
-
+  # Explicitly mark the intended tag as prerelease (do NOT rely on 'latest')
+  echo "Marking v$release_version as prerelease"
+  gh release edit "v$release_version" --prerelease || true
 }
-
 merge_release_branch_in_master() {
   release_version=$1
   release_branch="release-$release_version"
   release_tag="v$release_version"
-  
+
   if [ "$CLOUDYPAD_RELEASE_DRY_RUN" = true ]; then
     echo "Dry run enabled: Skipping release branch merge in master."
     return
   fi
 
-  echo "Waiting for release tag CI jobs (Docker image build) to finish on tag $release_tag..."
-  
-  timeout=3600  # Set timeout to 60 minutes (3600 seconds)
+  echo "Waiting for CI jobs on tag $release_tag..."
+  repo="$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "ap0ught/cloudypad")"
+  tag_sha="$(git rev-list -n 1 "$release_tag")"
+
+  timeout=3600
   start_time=$(date +%s)
   release_jobs_success=false
+
+  # Find a workflow run that matches the tag's commit SHA
+  find_run_id() {
+    gh api "repos/$repo/actions/runs?per_page=100" \
+      | jq -r --arg sha "$tag_sha" '.workflow_runs[] | select(.head_sha==$sha) | .id' \
+      | head -n1
+  }
+
+  run_id="$(find_run_id)"
+  if [ -z "$run_id" ]; then
+    echo "No workflow run found yet for $release_tag (sha $tag_sha). Waiting for it to appear..."
+  fi
 
   while true; do
     current_time=$(date +%s)
     elapsed_time=$((current_time - start_time))
-
     if [ $elapsed_time -ge $timeout ]; then
       echo "Timeout reached: CI jobs did not complete within $timeout seconds."
       exit 1
     fi
 
-    # Check for jobs on release tag
-    # Output is like: [ { { "name": "Release", "status": "in_progress" }]
-    release_jobs_response=$(gh run list -b "$release_tag" --json status,name)
-
-    echo "[$(date +%Y-%m-%d-%H:%M:%S)] Release jobs status: $release_jobs_response"
-
-    # filter for jobs with status "in_progress"
-    release_job_status=$(echo "$release_jobs_response" | jq -r '.[] | select(.name == "Release") | .status')
-
-    echo "Release job status: '$release_job_status'"
-
-    # If no jobs are running (release_jobs_in_progress is an empty string), break: all release jobs completed
-    if [ "$release_job_status" = "completed" ]; then
-      echo "Release CI job completed for $release_tag"
-      release_jobs_success=true
-      break
-    else
-      echo "CI jobs still running for $release_tag. Waiting..."
-      sleep 30
+    if [ -z "$run_id" ]; then
+      run_id="$(find_run_id)"
+      sleep 10
+      continue
     fi
+
+    run_json="$(gh api "repos/$repo/actions/runs/$run_id")"
+    status="$(echo "$run_json" | jq -r '.status')"
+    conclusion="$(echo "$run_json" | jq -r '.conclusion')"
+    name="$(echo "$run_json" | jq -r '.name')"
+    echo "[$(date +%Y-%m-%d-%H:%M:%S)] Run $run_id '$name' status: $status, conclusion: $conclusion"
+
+    if [ "$status" = "completed" ]; then
+      if [ "$conclusion" = "success" ]; then
+        release_jobs_success=true
+        echo "CI completed successfully for $release_tag."
+      else
+        echo "CI completed but not successful for $release_tag (conclusion: $conclusion)."
+      fi
+      break
+    fi
+    sleep 20
   done
 
   read -p "Merge release branch $release_branch into master? (y/N): " confirm_merge
@@ -200,30 +217,20 @@ merge_release_branch_in_master() {
   fi
 
   if [ "$release_jobs_success" = true ]; then
-    echo "Merging release branch $release_branch in master..."
+    echo "Merging release branch $release_branch into master..."
+    gh pr create --title "Finalize release $release_version" --body "" --base master --head "$release_branch" || true
+    gh pr merge "$release_branch" --merge
 
-    gh pr create \
-      --title "Finalize release $release_version" \
-      --body "" \
-      --base master \
-      --head $release_branch
-
-    gh pr merge $release_branch --merge
-
-    # Mark release as latest
-    current_release=$(gh release list -L 1 | cut -d$'\t' -f1)
-    echo "Found release: $current_release - marking it as latest"
-    gh release edit "${current_release}" --latest --prerelease=false
+    echo "Marking v$release_version as latest (not prerelease)"
+    gh release edit "v$release_version" --latest --prerelease=false
 
     echo "Checking out and pulling master after release..."
-
     git checkout master && git pull
   else
-    echo "Timeout reached: CI jobs did not complete within $timeout seconds."
+    echo "CI did not succeed for $release_tag."
     exit 1
   fi
 }
-
 set -e
 
 if [ -z ${GITHUB_TOKEN+x} ]; then 

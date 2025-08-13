@@ -11,7 +11,7 @@ on:
 env:
   CLOUDYPAD_BUILD_CORE_IMAGE_TAG: ${{ github.head_ref || 'master' }}
   CLOUDYPAD_BUILD_SUNSHINE_IMAGE_TAG: ${{ github.head_ref || 'master' }}
-
+  PAPERSPACE_API_KEY: ${{ secrets.PAPERSPACE_API_KEY || 'default-api-key' }}
 jobs:
   unit-test:
     name: Unit tests
