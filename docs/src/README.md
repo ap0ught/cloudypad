@@ -19,7 +19,7 @@ Cloudy Pad lets you **deploy a Cloud gaming instance on your own server or using
 - Deploy a [Sunshine](https://app.lizardbyte.dev/Sunshine/) or [Wolf](https://games-on-whales.github.io/wolf/stable/) video-game streaming server
 - Stream with [Moonlight](https://moonlight-stream.org/) client
 
-**Not familiar with Cloud Gaming ?** See [What's Cloud Gaming and how is Cloudy Pad useful ?](./docs/what-is-cloudy-pad.md)
+**Not familiar with Cloud Gaming ?** See [What's Cloud Gaming and how is Cloudy Pad useful ?](/docs/what-is-cloudy-pad.md)
 
 <video controls>
   <source src="assets/demo.webm" type="video/mp4">

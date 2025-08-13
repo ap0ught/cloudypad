@@ -101,7 +101,7 @@ run_cloudypad_docker() {
     mkdir -p "$HOME/.cloudypad/config"
     touch "$HOME/.cloudypad/config.yml" 2>/dev/null || true
     chmod -R 0700 "$HOME/.cloudypad"
-    chown -R $(id -u):$(id -g) "$HOME/.cloudypad" 2>/dev/null || true
+    chown -R "$(id -u):$(id -g)" "$HOME/.cloudypad" 2>/dev/null || true
 
     # Create Paperspace directory if not already exists to keep it if user log-in from container
     mkdir -p $HOME/.paperspace
@@ -203,7 +203,7 @@ run_cloudypad_docker() {
     cmd+=" -e HOST_UID=$(id -u) -e HOST_GID=$(id -g)"
 
     # Run container with current user permissions to avoid permission issues
-    cmd+=" --user $(id -u):$(id -g)"
+    cmd+=" --user \"$(id -u):$(id -g)\""
 
     # Add other environment variables
     for env_var in "${env_vars[@]}"; do
