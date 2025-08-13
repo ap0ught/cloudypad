@@ -2,6 +2,11 @@
 [![Discord](https://img.shields.io/discord/856434175455133727?style=for-the-badge&logo=discord&logoColor=ffffff&label=Chat%20with%20us%20on%20Discord&labelColor=6A7EC2&color=7389D8)](https://discord.gg/QATA3b9TTa)
 [![GitHub License](https://img.shields.io/github/license/pierrebeucher/cloudypad?style=for-the-badge&color=00d4c4)](./LICENSE.txt)
 
+[![Build and Test](https://github.com/ap0ught/cloudypad/actions/workflows/test-unit.yml/badge.svg)](https://github.com/ap0ught/cloudypad/actions/workflows/test-unit.yml)
+[![Integration Tests](https://github.com/ap0ught/cloudypad/actions/workflows/test-integ.yml/badge.svg)](https://github.com/ap0ught/cloudypad/actions/workflows/test-integ.yml)
+[![Validation](https://github.com/ap0ught/cloudypad/actions/workflows/validate.yml/badge.svg)](https://github.com/ap0ught/cloudypad/actions/workflows/validate.yml)
+[![Documentation](https://github.com/ap0ught/cloudypad/actions/workflows/doc.yml/badge.svg)](https://github.com/ap0ught/cloudypad/actions/workflows/doc.yml)
+
 Cloudy Pad lets you **deploy a Cloud gaming instance on your own servers, machines or directly in the Cloud** (AWS, Azure, Google Cloud, Scaleway...) and **play your own games** - without requiring a powerful gaming machine or a costly subscription.
 
 **Not familiar with Cloud Gaming ?** See [What's Cloud Gaming and how is Cloudy Pad useful ?](./docs/src/what-is-cloud-gaming.md)

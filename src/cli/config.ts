@@ -116,6 +116,13 @@ export class CliConfigManager {
 
     load(): CloudyPadGlobalConfigV1 {
         const rawConfig = this.readConfigRaw()
+        
+        // If config file doesn't exist or is empty, return default config
+        if (!rawConfig || Object.keys(rawConfig).length === 0) {
+            this.logger.debug("Config file missing or empty, returning base default config")
+            return BASE_DEFAULT_CONFIG
+        }
+        
         const config = this.zodParseSafe(rawConfig, CloudyPadGlobalConfigSchemaV1)
         this.writeConfigSafe(config) // Rewrite config with correct schema version as current schema may have changed since last load
         return config

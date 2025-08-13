@@ -161,15 +161,19 @@ describe('ConfigManager', () => {
             assert.deepStrictEqual(loadedConfig, dummyConfig, 'Loaded config should match the written config')
         })
 
-        it('should throw an error if config file is missing', () => {
+        it('should handle missing config file by returning default config', () => {
             const tmpDataRootDir = createTempTestDir("config-manager-load-err")
             const configManager = new CliConfigManager(tmpDataRootDir)
 
-            assert.throws(
-                () => configManager.load(),
-                /Couldn't load config at/,
-                'Should throw an error if config file does not exist'
-            )
+            // load() should work even without config file by returning defaults
+            const loadedConfig = configManager.load()
+            
+            // Should return a valid config with default values
+            assert.ok(loadedConfig.analytics, 'Should have analytics config')
+            assert.ok(loadedConfig.analytics.posthog, 'Should have posthog config')
+            assert.strictEqual(loadedConfig.version, "1", 'Should have version 1')
+            assert.strictEqual(typeof loadedConfig.analytics.promptedPersonalDataCollectionApproval, 'boolean', 'Should have prompted approval boolean')
+            assert.strictEqual(typeof loadedConfig.analytics.posthog.distinctId, 'string', 'Should have distinctId string')
         })
     })
 })
