@@ -101,4 +101,4 @@ cloudypad stop mypad
 
 ## Problem ?
 
-😱 Something went wrong? See _Help and Troubleshooting_ section on the left, [FAQ and known issues](./help/faq.md) or [create an issue](https://github.com/ap0ught/cloudypad/issues)
+😱 Something went wrong? See _Help and Troubleshooting_ section on the left, [FAQ and known issues](./help/faq.md) or [create an issue](https://github.com/pierrebeucher/cloudypad/issues)

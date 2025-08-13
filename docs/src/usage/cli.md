@@ -73,7 +73,7 @@ cloudypad create aws \
 
 Use `cloudypad create <provider> --help` for available flags.
 
-Alternatively, see [CLI integration tests](https://github.com/ap0ught/cloudypad/blob/master/test/integ/cli-full-lifecycle) for available flags
+Alternatively, see [CLI integration tests](https://github.com/pierrebeucher/cloudypad/blob/master/test/integ/cli-full-lifecycle) for available flags
 
 ## Manage instances
 
