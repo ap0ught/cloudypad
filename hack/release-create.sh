@@ -54,23 +54,38 @@ create_push_release_branch() {
 
   echo "Checking out branch '$release_branch'..."
 
-  # Prefer reusing existing branch (local or remote) instead of failing
+  # If there are local changes, stash them so checkout can't fail
+  STASHED=false
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Worktree is dirty. Stashing changes temporarily..."
+    git stash push -u -m "release-create temp $(date -Iseconds)"
+    STASHED=true
+  fi
+
+  # Reuse existing branch (local or remote) or create it
   if git show-ref --verify --quiet "refs/heads/$release_branch"; then
     echo "Branch '$release_branch' exists locally. Reusing it."
     git checkout "$release_branch"
+  elif git ls-remote --exit-code --heads origin "$release_branch" >/dev/null 2>&1; then
+    echo "Branch '$release_branch' exists on origin. Creating local tracking branch."
+    git fetch origin "$release_branch:$release_branch"
+    git checkout "$release_branch"
   else
-    if git ls-remote --exit-code --heads origin "$release_branch" >/dev/null 2>&1; then
-      echo "Branch '$release_branch' exists on origin. Creating local tracking branch."
-      git fetch origin "$release_branch:$release_branch"
-      git checkout "$release_branch"
-    else
-      echo "Creating new branch '$release_branch'..."
-      git checkout -b "$release_branch"
+    echo "Creating new branch '$release_branch'..."
+    git checkout -b "$release_branch"
+  fi
+
+  # Restore stashed changes onto the release branch
+  if [ "$STASHED" = true ]; then
+    echo "Restoring stashed changes onto '$release_branch'..."
+    if ! git stash pop; then
+      echo "Automatic stash pop resulted in conflicts. Resolve them, then run:"
+      echo "  git add -A && git commit -m \"chore: prepare release $release_version - update version in package files and scripts\""
+      exit 1
     fi
   fi
 
   echo "Committing and pushing version changes to $release_branch..."
-
   git add package.json cloudypad.sh install.sh flake.nix
   if git diff --cached --quiet; then
     echo "No changes to commit."
@@ -89,6 +104,7 @@ create_push_release_branch() {
     fi
   fi
 }
+
 create_release_pr_and_merge_in_release_branch() {
   release_version=$1
   release_branch="release-$release_version"
