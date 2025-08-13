@@ -70,8 +70,17 @@ export class CliConfigManager {
      * @param dataRootDir Do not use default dataRootDir. 
      */
     constructor(dataRootDir?: string) {
-        this.dataRootDir = dataRootDir ?? new CoreConfigLoader().loadLocalDataRootDir()
-        this.configPath = path.join(this.dataRootDir, 'config.yml')
+        // Check if we're in MobaXterm environment with custom config dir
+        const customConfigDir = process.env.CLOUDYPAD_CONFIG_DIR
+
+        if (customConfigDir) {
+            this.logger.info(`Using custom config directory from CLOUDYPAD_CONFIG_DIR: ${customConfigDir}`)
+            this.dataRootDir = customConfigDir
+            this.configPath = path.join(this.dataRootDir, 'config.yml')
+        } else {
+            this.dataRootDir = dataRootDir ?? new CoreConfigLoader().loadLocalDataRootDir()
+            this.configPath = path.join(this.dataRootDir, 'config.yml')
+        }
     }
 
 

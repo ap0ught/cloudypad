@@ -10,7 +10,7 @@ Create a `Dockerfile` such as:
 
 ```Dockerfile
 # Use the same version returned by cloudypad --version
-FROM ghcr.io/pierrebeucher/cloudypad/sunshine:0.19.0
+FROM ghcr.io/ap0ught/cloudypad/sunshine:0.19.0
 
 # Example: add custom packages
 RUN --mount=type=cache,target=/var/cache --mount=type=tmpfs,target=/var/log \

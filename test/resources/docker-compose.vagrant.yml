@@ -7,7 +7,7 @@
 #
 services:
   cloudy:
-    image: ghcr.io/pierrebeucher/cloudypad/sunshine:local
+    image: ghcr.io/ap0ught/cloudypad/sunshine:local
     # This container name is used by various scripts and functions to identify the container
     # Don't change it
     container_name: cloudy

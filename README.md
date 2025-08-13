@@ -1,6 +1,6 @@
 # Cloudy Pad
 [![Discord](https://img.shields.io/discord/856434175455133727?style=for-the-badge&logo=discord&logoColor=ffffff&label=Chat%20with%20us%20on%20Discord&labelColor=6A7EC2&color=7389D8)](https://discord.gg/QATA3b9TTa)
-[![GitHub License](https://img.shields.io/github/license/PierreBeucher/cloudypad?style=for-the-badge&color=00d4c4)](./LICENSE.txt)
+[![GitHub License](https://img.shields.io/github/license/ap0ught/cloudypad?style=for-the-badge&color=00d4c4)](./LICENSE.txt)
 
 Cloudy Pad lets you **deploy a Cloud gaming instance on your own servers, machines or directly in the Cloud** (AWS, Azure, Google Cloud, Scaleway...) and **play your own games** - without requiring a powerful gaming machine or a costly subscription.
 
@@ -43,14 +43,14 @@ Cloudy Pad lets you **deploy a Cloud gaming instance on your own servers, machin
 
 ## Have a question ? Found a bug ?
 
-- See [FAQ and known issues](https://docs.cloudypad.gg/usage/faq.md) or [create an issue](https://github.com/PierreBeucher/cloudypad/issues)
+- See [FAQ and known issues](https://docs.cloudypad.gg/usage/faq.md) or [create an issue](https://github.com/ap0ught/cloudypad/issues)
 - Come and chat with us on [Discord](https://discord.gg/QATA3b9TTa) !
 
 ## Contributors
 
 Thanks to our contributors
 
-[![Code Contributors](https://contrib.rocks/image?repo=PierreBeucher/cloudypad)](https://github.com/PierreBeucher/cloudypad/graphs/contributors)
+[![Code Contributors](https://contrib.rocks/image?repo=ap0ught/cloudypad)](https://github.com/ap0ught/cloudypad/graphs/contributors)
 
 ## Contributing
 
@@ -66,4 +66,4 @@ See [Development Guide](https://docs.cloudypad.gg/development-guide)
 
 ## License
 
-Cloudy Pad is licensed under [GNU General Public License v3.0](https://github.com/PierreBeucher/cloudypad/blob/master/LICENSE.txt)
+Cloudy Pad is licensed under [GNU General Public License v3.0](https://github.com/ap0ught/cloudypad/blob/master/LICENSE.txt)
