@@ -192,7 +192,7 @@ merge_release_branch_in_master() {
       sleep 30
     fi
   done
-  
+
   if [ "$release_jobs_success" = true ]; then
     echo "Merging release branch $release_branch in master..."
 

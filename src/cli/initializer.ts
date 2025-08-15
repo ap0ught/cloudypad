@@ -126,7 +126,7 @@ export class InteractiveInstanceInitializer<
             console.info("")
             console.info("If you like Cloudy Pad please leave us a star ⭐ https://github.com/ap0ught/cloudypad")
             console.info("")
-            console.info("🐛 A bug ? Some feedback ? Do not hesitate to file an issue: https://github.com/ap0ught/cloudypad/issues")    
+            console.info("🐛 A bug ? Some feedback ? Do not hesitate to file an issue: https://github.com/ap0ught/cloudypad/issues")
         }
     }
 

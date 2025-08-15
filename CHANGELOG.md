@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.36.0](https://github.com/PierreBeucher/cloudypad/compare/v0.35.0...v0.36.0) (2025-08-14)
+## [0.36.0](https://github.com/pierrebeucher/cloudypad/compare/v0.35.0...v0.36.0) (2025-08-14)
 
 
 ### Features
