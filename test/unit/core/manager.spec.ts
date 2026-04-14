@@ -1,11 +1,12 @@
 import * as assert from 'assert';
 import { DEFAULT_COMMON_INPUT, getUnitTestCoreConfig, getUnitTestDummyProviderClient, initializeDummyInstanceState } from '../utils';
-import { CommonConfigurationInputV1, InstanceEventEnum, STATE_MAX_EVENTS } from '../../../src/core/state/state';
-import { InstanceStatus, GenericInstanceManager, InstanceManager } from '../../../src/core/manager';
+import { InstanceEventEnum, STATE_MAX_EVENTS } from '../../../src/core/state/state';
+import { InstanceStatus, InstanceManager } from '../../../src/core/manager';
 import { ServerRunningStatus } from '../../../src/core/runner';
 import { getLogger } from '../../../src/log/utils';
 import { CloudypadClient } from '../../../src/core/client';
 import * as sinon from 'sinon';
+import { DummyInstanceInfraManager } from '../../../src/providers/dummy/infra';
 
 describe('Instance manager', () => {
 
@@ -206,21 +207,39 @@ describe('Instance manager', () => {
         const manager = await dummyProviderClient.getInstanceManager(instanceName)
 
         const retryArgs = { retries: 3, retryDelaySeconds: 0 }
-        const actionsToTest: { action: () => Promise<void>, stubName: keyof InstanceManager }[] = [
-            { action: async() => { return manager.configure(retryArgs) }, stubName: 'doConfigure' },
-            { action: async() => { return manager.provision(retryArgs) }, stubName: 'doProvision' },
-            { action: async() => { return manager.start(retryArgs) }, stubName: 'doStart' },
-            { action: async() => { return manager.stop(retryArgs) }, stubName: 'doStop' },
-            { action: async() => { return manager.restart(retryArgs) }, stubName: 'doRestart' },
-            { action: async() => { return manager.destroy(retryArgs) }, stubName: 'doDestroy' },
+        const actionsToTest: { action: (m: InstanceManager) => Promise<void>, stubName: keyof InstanceManager }[] = [
+            { action: async(m) => { return m.configure(retryArgs) }, stubName: 'doConfigure' },
+            { action: async(m) => { return m.provision(retryArgs) }, stubName: 'doProvision' },
+            { action: async(m) => { return m.start(retryArgs) }, stubName: 'doStart' },
+            { action: async(m) => { return m.stop(retryArgs) }, stubName: 'doStop' },
+            { action: async(m) => { return m.restart(retryArgs) }, stubName: 'doRestart' },
+            { action: async(m) => { return m.destroy(retryArgs) }, stubName: 'doDestroy' },
         ]
 
         for (const action of actionsToTest) {
+            const manager = await dummyProviderClient.getInstanceManager(instanceName)
+
+            // stub all low-level actions to succeed immediately
+            // we'll test high-level actions to ensure they're not retried when low-level actions succeed
+            const lowLevelFunctions = [
+                'doConfigure',
+                'doProvision',
+                'doStart',
+                'doStop',
+                'doRestart',
+                'doDestroy',
+            ]
+            for (const lowLevelFunction of lowLevelFunctions) {
+                if(lowLevelFunction !== action.stubName) {
+                    sinon.stub(manager, lowLevelFunction as keyof InstanceManager).resolves()
+                }
+            }
+
             // stub doAction function to succeed immediately, should not retry
             const stubFn = sinon.stub(manager, action.stubName)
             stubFn.resolves()
 
-            await action.action()
+            await action.action(manager)
             assert.strictEqual(stubFn.callCount, 1)
         }
     })
@@ -229,27 +248,133 @@ describe('Instance manager', () => {
         const instanceName = `dummy-test-core-manager-action-retry`
         await initializeDummyInstanceState(instanceName)
         const dummyProviderClient = getUnitTestDummyProviderClient()
-        const manager = await dummyProviderClient.getInstanceManager(instanceName)
 
+        // scenarios for which to test retry logic
+        // each scenario describe high-level action and the required sub on low-level action to use 
+        // to emulate multiple failures before success, validating retry logic works as expected
         const retryArgs = { retries: 3, retryDelaySeconds: 0 }
-        const actionsToTest: { action: () => Promise<void>, stubName: keyof InstanceManager }[] = [
-            { action: async() => { return manager.configure(retryArgs) }, stubName: 'doConfigure' },
-            { action: async() => { return manager.provision(retryArgs) }, stubName: 'doProvision' },
-            { action: async() => { return manager.start(retryArgs) }, stubName: 'doStart' },
-            { action: async() => { return manager.stop(retryArgs) }, stubName: 'doStop' },
-            { action: async() => { return manager.restart(retryArgs) }, stubName: 'doRestart' },
-            { action: async() => { return manager.destroy(retryArgs) }, stubName: 'doDestroy' },
+        const actionsToTest: { action: (manager: InstanceManager) => Promise<void>, stubName: keyof InstanceManager }[] = [
+            { action: async(m) => { return m.configure(retryArgs) }, stubName: 'doConfigure' },
+            { action: async(m) => { return m.provision(retryArgs) }, stubName: 'doProvision' },
+            { action: async(m) => { return m.start(retryArgs) }, stubName: 'doStart' },
+            { action: async(m) => { return m.stop(retryArgs) }, stubName: 'doStop' },
+            { action: async(m) => { return m.restart(retryArgs) }, stubName: 'doRestart' },
+            { action: async(m) => { return m.destroy(retryArgs) }, stubName: 'doDestroy' },
         ]
 
         for (const action of actionsToTest) {
+            const manager = await dummyProviderClient.getInstanceManager(instanceName)
+
+            // stub all low-level functions by default to succeed immediately
+            // expect the one under test which has its own stub
+            const lowLevelFunctions = [
+                'doConfigure',
+                'doProvision',
+                'doStart',
+                'doStop',
+                'doRestart',
+                'doDestroy',
+            ]
+            for (const lowLevelFunction of lowLevelFunctions) {
+                if(lowLevelFunction !== action.stubName) {
+                    sinon.stub(manager, lowLevelFunction as keyof InstanceManager).resolves()
+                }
+            }
+
             // stub doAction function to fail, should retry
             const stubFn = sinon.stub(manager, action.stubName)
             stubFn.onFirstCall().rejects(new Error('First failure'))
             stubFn.onSecondCall().rejects(new Error('Second failure'))
             stubFn.onThirdCall().resolves()
 
-            await action.action()
+            await action.action(manager)
             assert.strictEqual(stubFn.callCount, 3)
+
+            // restore stub function to avoid side effects between scenarios
+            stubFn.restore()
         }
+    })
+
+    it(`should delete instance server on stop when deleteInstanceServerOnStop is enabled`, async () => {
+        const instanceName = `dummy-test-core-manager-delete-instance-server-on-stop`
+        await initializeDummyInstanceState(instanceName, {
+            provision: {
+                input: {
+                    deleteInstanceServerOnStop: true,
+                    startDelaySeconds: 0,
+                    stopDelaySeconds: 0,
+                    configurationDelaySeconds: 0,
+                    provisioningDelaySeconds: 0,
+                    readinessAfterStartDelaySeconds: 0,
+                }
+            }
+        })
+        const dummyProviderClient = getUnitTestDummyProviderClient()
+        const manager = await dummyProviderClient.getInstanceManager(instanceName)
+
+        await manager.provision()
+        await manager.configure()
+
+        await manager.start()
+        const instanceStatus = await manager.getInstanceStatus()
+        assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Running)
+
+        await manager.stop()
+        const instanceStatusAfterStop = await manager.getInstanceStatus()
+        assert.strictEqual(instanceStatusAfterStop.serverStatus, ServerRunningStatus.Unknown)
+    })
+
+
+    it(`should keep instance server on stop when deleteInstanceServerOnStop is disabled`, async () => {
+        const instanceName = `dummy-test-core-manager-keep-instance-server-on-stop`
+        await initializeDummyInstanceState(instanceName, {
+            provision: {
+                input: {
+                    deleteInstanceServerOnStop: false,
+                    startDelaySeconds: 0,
+                    stopDelaySeconds: 0,
+                    configurationDelaySeconds: 0,
+                    provisioningDelaySeconds: 0,
+                    readinessAfterStartDelaySeconds: 0,
+                }
+            }
+        })
+        const dummyProviderClient = getUnitTestDummyProviderClient()
+        const manager = await dummyProviderClient.getInstanceManager(instanceName)
+
+        await manager.provision()
+        await manager.configure()
+
+        await manager.start()
+        const instanceStatus = await manager.getInstanceStatus()
+        assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Running)
+
+        await manager.stop()
+        const instanceStatusAfterStop = await manager.getInstanceStatus()
+        assert.strictEqual(instanceStatusAfterStop.serverStatus, ServerRunningStatus.Stopped)
+    })
+
+    it('should start instance on deploy or configure if instance is not already running', async () => {
+        const instanceName = `dummy-test-core-manager-start-instance-on-deploy-or-configure`
+        await initializeDummyInstanceState(instanceName)
+        const dummyProviderClient = getUnitTestDummyProviderClient()
+        const manager = await dummyProviderClient.getInstanceManager(instanceName)
+
+        // emulate usual workflow
+        await manager.deploy()
+        
+        // stop instance and check stopped
+        await manager.stop()
+        const instanceStatusAfterStop = await manager.getInstanceStatus()
+        assert.strictEqual(instanceStatusAfterStop.serverStatus, ServerRunningStatus.Stopped)
+
+        // configure instance
+        // should start instance as well
+        await manager.configure()
+        const instanceStatusAfterConfigure = await manager.getInstanceStatus()
+        assert.strictEqual(instanceStatusAfterConfigure.serverStatus, ServerRunningStatus.Running)
+
+        // deploy directly calls to configure with same effect
+        // not adding another test here since deploy() on dummy instance also start instance
     })
 })

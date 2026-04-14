@@ -19,11 +19,21 @@ describe('AWS input prompter', () => {
             diskSize: 200,
             publicIpType: PUBLIC_IP_TYPE_STATIC,
             region: "us-west-2",
+            zone: "us-west-2a",
             useSpot: true,
             costAlert: {
                 limit: 999,
                 notificationEmail: "dummy@crafteo.io",
-            }
+            },
+            dataDiskSizeGb: 100,
+            baseImageSnapshot: {
+                enable: true,
+                keepOnDeletion: true,
+            },
+            dataDiskSnapshot: {
+                enable: true,
+            },
+            deleteInstanceServerOnStop: true,
         },
         configuration: {
             ...DEFAULT_COMMON_INPUT.configuration
@@ -34,39 +44,38 @@ describe('AWS input prompter', () => {
         ...DEFAULT_COMMON_CLI_ARGS,
         name: instanceName,
         diskSize: TEST_INPUT.provision.diskSize,
-        publicIpType: TEST_INPUT.provision.publicIpType,
         instanceType: TEST_INPUT.provision.instanceType,
         region: TEST_INPUT.provision.region,
+        zone: TEST_INPUT.provision.zone,
         spot: TEST_INPUT.provision.useSpot,
         costLimit: TEST_INPUT.provision.costAlert?.limit,
         costNotificationEmail: TEST_INPUT.provision.costAlert?.notificationEmail,
+        baseImageSnapshot: TEST_INPUT.provision.baseImageSnapshot?.enable,
+        baseImageKeepOnDeletion: TEST_INPUT.provision.baseImageSnapshot?.keepOnDeletion,
+        dataDiskSnapshot: TEST_INPUT.provision.dataDiskSnapshot?.enable,
+        deleteInstanceServerOnStop: TEST_INPUT.provision.deleteInstanceServerOnStop,
+        dataDiskSize: TEST_INPUT.provision.dataDiskSizeGb,
     }
 
     it('should return provided inputs without prompting when full input provider', async () => {
-        const coreClient = getUnitTestCoreClient()
         const result = await new AwsInputPrompter({ coreConfig: coreConfig }).promptInput(TEST_INPUT, { autoApprove: true })
         assert.deepEqual(result, TEST_INPUT)
     })
 
     it('should convert CLI args into partial input', () => {
-        const coreClient = getUnitTestCoreClient()
         const prompter = new AwsInputPrompter({ coreConfig: coreConfig })
         const result = prompter.cliArgsIntoPartialInput(TEST_CLI_ARGS)
 
         const expected: PartialDeep<AwsInstanceInput> = {
             ...TEST_INPUT,
             provision: {
-                ...TEST_INPUT.provision,
+                // publicIpType is not set via CLI
+                ...lodash.omit(TEST_INPUT.provision, "publicIpType"),
                 ssh: lodash.omit(TEST_INPUT.provision.ssh, "user"),
                 costAlert: {
                     limit: 999,
                     notificationEmail: "dummy@crafteo.io",
                 },
-            },
-            configuration: {
-                ...TEST_INPUT.configuration,
-                // cliArgsIntoPartialInput will leave this value specifically undefined
-                wolf: null
             }
         }
         

@@ -8,15 +8,37 @@ import { DummyInstanceStateV1 } from '../../../src/providers/dummy/state';
 
 describe('Ansible configurator', function () {
 
+    const testHost = "test-ansible-configurator-host"
+    const testDataDiskId = "test-ansible-configurator-data-disk-id"
+    const testDataDiskSnapshotId = "test-ansible-configurator-data-disk-snapshot-id"
+    const testMachineDataDiskLookupId = "test-ansible-configurator-data-disk-lookup-id"
+    const testMachineDataDiskMountMethod = "foobar-method"
+    const testBaseImageId = "test-ansible-configurator-base-image-id"
+    const testPublicIPv4 = "127.0.0.1"
+
     it('should generate inventory content (with defined inputs)', async function () {
         const configurator = new AnsibleConfigurator({
             instanceName: "test-ansible-configurator-instance",
             provider: "test-ansible-configurator-provider",
             provisionInput: DEFAULT_COMMON_INPUT.provision,
-            configurationInput: DEFAULT_COMMON_INPUT.configuration,
+            configurationInput: {
+                ...DEFAULT_COMMON_INPUT.configuration,
+                sunshine: {
+                    ...DEFAULT_COMMON_INPUT.configuration.sunshine!,
+                    maxBitrateKbps: 5000,
+                    autoheal: {
+                        enable: true,
+                    },
+                }
+            },
             provisionOutput: {
-                host: "test-ansible-configurator-host",
-                dataDiskId: "test-ansible-configurator-data-disk-id"   
+                host: testHost,
+                publicIPv4: testPublicIPv4,
+                dataDiskId: testDataDiskId,
+                dataDiskSnapshotId: testDataDiskSnapshotId,
+                machineDataDiskLookupId: testMachineDataDiskLookupId,
+                machineDataDiskMountMethod: testMachineDataDiskMountMethod,
+                baseImageId: testBaseImageId,
             }
         })
 
@@ -26,7 +48,7 @@ describe('Ansible configurator', function () {
             all: {
                 hosts: {
                     "test-ansible-configurator-instance": {
-                        ansible_host: "test-ansible-configurator-host",
+                        ansible_host: testPublicIPv4,
                         ansible_user: DEFAULT_COMMON_INPUT.provision.ssh.user,
                         ansible_password: undefined,
                         ansible_ssh_private_key_file: DEFAULT_COMMON_INPUT.provision.ssh.privateKeyPath,
@@ -41,19 +63,27 @@ describe('Ansible configurator', function () {
                         sunshine_nvidia_enable: true,
                         sunshine_image_tag: DEFAULT_COMMON_INPUT.configuration.sunshine?.imageTag,
                         sunshine_image_registry: DEFAULT_COMMON_INPUT.configuration.sunshine?.imageRegistry,
-
+                        
                         sunshine_keyboard_layout: DEFAULT_COMMON_INPUT.configuration.keyboard?.layout,
                         sunshine_keyboard_variant: DEFAULT_COMMON_INPUT.configuration.keyboard?.variant,
                         sunshine_keyboard_model: DEFAULT_COMMON_INPUT.configuration.keyboard?.model,
                         sunshine_keyboard_options: DEFAULT_COMMON_INPUT.configuration.keyboard?.options,
+
+                        sunshine_autoheal_enable: true,
+
+                        sunshine_max_bitrate_kbps: 5000,
 
                         sunshine_locale: DEFAULT_COMMON_INPUT.configuration.locale,
                         
                         autostop_enable: DEFAULT_COMMON_INPUT.configuration.autostop?.enable,
                         autostop_timeout_seconds: DEFAULT_COMMON_INPUT.configuration.autostop?.timeoutSeconds,
 
-                        cloudypad_data_disk_enabled: "test-ansible-configurator-data-disk-id" !== undefined,
-                        cloudypad_data_disk_id: "test-ansible-configurator-data-disk-id",
+                        cloudypad_data_disk_enabled: true,
+                        cloudypad_data_disk_id: testMachineDataDiskLookupId,
+                        cloudypad_data_disk_lookup_method: testMachineDataDiskMountMethod,
+
+                        ratelimit_enable: true,
+                        ratelimit_max_mbps: DEFAULT_COMMON_INPUT.configuration.ratelimit?.maxMbps,
                     },
                 },
             },
@@ -75,6 +105,7 @@ describe('Ansible configurator', function () {
             configurationInput: {},
             provisionOutput: {
                 host: "test-ansible-configurator-host-default",
+                publicIPv4: "127.0.0.1",
             }
         })
 
@@ -95,7 +126,7 @@ describe('Ansible configurator', function () {
                         cloudypad_provider: "test-ansible-configurator-provider-default",
                         sunshine_image_registry: CLOUDYPAD_SUNSHINE_IMAGE_REGISTRY,
                         sunshine_image_tag: CLOUDYPAD_VERSION,
-                        sunshine_nvidia_enable: true,
+
                         sunshine_server_name: "test-ansible-configurator-instance-default",
                         wolf_instance_name: "test-ansible-configurator-instance-default",
                     },

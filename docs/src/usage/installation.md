@@ -1,4 +1,4 @@
-# Installation and Upgrade
+# CLI Installation and Upgrade
 
 - [Requirements for all OS](#requirements-for-all-os)
 - [Installation](#installation)
@@ -28,7 +28,7 @@
 Install latest version of `cloudypad` CLI:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ap0ught/cloudypad/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/PierreBeucher/cloudypad/master/install.sh | bash
 ```
 
 ### MacOS
@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/ap0ught/cloudypad/master/install.sh
 Install latest version of `cloudypad` CLI:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ap0ught/cloudypad/master/install.sh | zsh
+curl -fsSL https://raw.githubusercontent.com/PierreBeucher/cloudypad/master/install.sh | zsh
 ```
 
 **[OrbStack](https://orbstack.dev/) is recommended** over Docker Desktop as it's more compatible for Cloudy Pad usage. 
@@ -51,13 +51,13 @@ Note: If you are using SSH keys mounted from Windows host, make sure they have p
 
 ### Nix / NixOS
 
-Cloudy Pad is packaged as a [Nix Flake](https://nixos.wiki/wiki/flakes), see [`flake.nix`](/flake.nix)
+Cloudy Pad is packaged as a [Nix Flake](https://nixos.wiki/wiki/flakes), see [`flake.nix`](https://github.com/PierreBeucher/cloudypad/blob/master/flake.nix)
 
 You can include it in your NixOS config or run directly with `nix run`:
 
 ```sh
-nix run github:ap0ught/cloudypad create
-nix run github:ap0ught/cloudypad -- --version
+nix run github:PierreBeucher/cloudypad create
+nix run github:PierreBeucher/cloudypad -- --version
 ```
 
 ## Upgrade

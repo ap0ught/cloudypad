@@ -11,8 +11,8 @@ if [ -n "$CLOUDYPAD_CLI_LAUNCHER_DEBUG" ]; then
   set -x
 fi
 
-CLOUDYPAD_VERSION=0.36.0
-CLOUDYPAD_IMAGE="${CLOUDYPAD_IMAGE:-"ghcr.io/ap0ught/cloudypad:$CLOUDYPAD_VERSION"}"
+CLOUDYPAD_VERSION=0.44.0
+CLOUDYPAD_IMAGE="${CLOUDYPAD_IMAGE:-"ghcr.io/pierrebeucher/cloudypad:$CLOUDYPAD_VERSION"}"
 CLOUDYPAD_TARGET_IMAGE="cloudypad/local-runner:local"
 
 # Hidden command used during installation to setup Docker image locally
@@ -41,7 +41,7 @@ FROM $CLOUDYPAD_IMAGE
 # - Delete user matching host's user ID if already exists
 # - Create group if not exists
 # - Create user
-RUN if [ "$(id -u $HOST_UID)" -ne 0 ] >/dev/null 2>&1; then \
+RUN if [ "$HOST_UID" -ne 0 ] >/dev/null 2>&1; then \
         if id -u $HOST_UID >/dev/null 2>&1; then \
             deluser \$(id -un $HOST_UID); \
         fi && \
@@ -75,35 +75,14 @@ fi
 # - mount Cloud credentials if available
 # - add environment variable matching host
 run_cloudypad_docker() {
-    # Setup trap to clean up temporary files
-    local temp_dirs_to_cleanup=()
-    cleanup() {
-        for dir in "${temp_dirs_to_cleanup[@]}"; do
-            if [ -d "$dir" ]; then
-                rm -rf "$dir"
-            fi
-        done
-    }
-    trap cleanup EXIT
 
     # Ensure Cloudy Pad home exists and is secure enough
     # So as not to create it from Docker volume mount as root
-    if [ ! -d "$HOME/.cloudypad" ]; then
-        mkdir -p $HOME/.cloudypad
-        mkdir -p "$HOME/.cloudypad/config"
-        chmod -R 0700 $HOME/.cloudypad
-    elif [ "$(stat -c %a $HOME/.cloudypad)" != "700" ]; then
-        echo "Warning: Permissions on $HOME/.cloudypad are not secure, fixing..." >&2
-        chmod -R 0700 $HOME/.cloudypad
-    fi
+    # TODO check permission?
+    mkdir -p $HOME/.cloudypad
+    chmod 0700 $HOME/.cloudypad
 
-    # Create subdirectories with proper permissions
-    mkdir -p "$HOME/.cloudypad/config"
-    touch "$HOME/.cloudypad/config.yml" 2>/dev/null || true
-    chmod -R 0700 "$HOME/.cloudypad"
-    chown -R "$(id -u):$(id -g)" "$HOME/.cloudypad" 2>/dev/null || true
-
-    # Create Paperspace directory if not already exists to keep it if user log-in from container
+    # Create Paperspace and directory if not already exists to keep it if user log-in from container
     mkdir -p $HOME/.paperspace
 
     # List of directories to mount only if they exist
@@ -116,20 +95,6 @@ run_cloudypad_docker() {
         "$HOME/.config/gcloud"
         "$HOME/.config/scw"
     )
-
-    # MobaXterm handling - set a custom config dir in the container filesystem
-    # We use a completely different approach for MobaXterm: instead of mounting the
-    # problematic home directory, we create a custom config directory in the container
-    local is_mobaxterm=false
-    local cloudypad_config_dir="$HOME/.cloudypad"
-
-    if [[ "$HOME" == "/home/mobaxterm"* ]]; then
-        is_mobaxterm=true
-        # For MobaXterm, we'll use a custom directory inside the container instead
-        # of mounting the host's .cloudypad directory
-        cloudypad_config_dir="/tmp/cloudypad_config"
-        echo "MobaXterm environment detected, using special configuration" >&2
-    fi
 
     # Build run command with proper directories
     local cmd="docker run --rm"
@@ -144,10 +109,7 @@ run_cloudypad_docker() {
 
     # Only mount a directory if it exists on host
     for mount in "${mounts[@]}"; do
-        # Skip mounting .cloudypad for MobaXterm to avoid permission issues
-        if [ "$mount" = "$HOME/.cloudypad" ] && [ "$is_mobaxterm" = true ]; then
-            continue
-        elif [ -d "$mount" ]; then
+        if [ -d "$mount" ]; then
             cmd+=" -v $mount:$mount"
         fi
     done
@@ -169,6 +131,7 @@ run_cloudypad_docker() {
         # Azure
         "AZURE_LOCATION" "AZURE_SUBSCRIPTION_ID" "AZURE_CLIENT_ID" "AZURE_SECRET" "AZURE_TENANT"
         "ARM_SUBSCRIPTION_ID" "ARM_CLIENT_ID" "ARM_CLIENT_SECRET" "ARM_TENANT_ID"
+        "AZURE_CORE_USE_MSAL_HTTP_CACHE"
 
         # Google
         "GOOGLE_PROJECT" "GOOGLE_CLOUD_PROJECT" "GCLOUD_PROJECT" "CLOUDSDK_CORE_PROJECT" 
@@ -191,21 +154,6 @@ run_cloudypad_docker() {
         "PULUMI_BACKEND_URL" "PULUMI_CONFIG_PASSPHRASE"
     )
 
-    # Add HOME environment variable to ensure .cloudypad is correctly referenced
-    cmd+=" -e HOME=$HOME"
-
-    # For MobaXterm, set a custom config environment variable
-    if [ "$is_mobaxterm" = true ]; then
-        cmd+=" -e CLOUDYPAD_CONFIG_DIR=$cloudypad_config_dir"
-    fi
-
-    # Add user ID info for better container setup
-    cmd+=" -e HOST_UID=$(id -u) -e HOST_GID=$(id -g)"
-
-    # Run container with current user permissions to avoid permission issues
-    cmd+=" --user \"$(id -u):$(id -g)\""
-
-    # Add other environment variables
     for env_var in "${env_vars[@]}"; do
         if [ -n "${!env_var}" ]; then
             cmd+=" -e $env_var=${!env_var}"
@@ -214,7 +162,7 @@ run_cloudypad_docker() {
 
     # Add SSH agent volume and env var if it's available locally
     if [ -n "$SSH_AUTH_SOCK" ]; then
-        cmd+=" -v $SSH_AUTH_SOCK:/ssh-agent -e SSH_AUTH_SOCK=/ssh-agent"
+        cmd+=(-v "$SSH_AUTH_SOCK:/ssh-agent" -e SSH_AUTH_SOCK=/ssh-agent)
     fi
 
     # If first arg is "debug-container" run a bash as entrypoint
@@ -224,15 +172,7 @@ run_cloudypad_docker() {
         $cmd
     else
         cmd+=" $CLOUDYPAD_TARGET_IMAGE"
-
-        # For MobaXterm, we need to initialize the config directory
-        if [ "$is_mobaxterm" = true ]; then
-            # Run a command to create the custom config directory in the container with proper permissions
-            # We need to ensure the config directory exists and is writable
-            $cmd /bin/sh -c "mkdir -p $cloudypad_config_dir && chmod 0777 $cloudypad_config_dir && exec ${*}"
-        else
-            $cmd "${@}"
-        fi
+        $cmd "${@}"
     fi
 }
 

@@ -1,4 +1,4 @@
-import { InstancesClient, protos, RegionsClient, MachineTypesClient, AcceleratorTypesClient, ZoneOperationsClient } from '@google-cloud/compute'
+import { InstancesClient, protos, RegionsClient, MachineTypesClient, AcceleratorTypesClient, ZoneOperationsClient, DiskTypesClient, DisksClient, SnapshotsClient, ImagesClient } from '@google-cloud/compute'
 import { GoogleAuth } from 'google-auth-library'
 import { getLogger, Logger } from '../../log/utils'
 import { ProjectsClient, protos as rmprotos  } from '@google-cloud/resource-manager'
@@ -10,8 +10,9 @@ interface StartStopActionOpts {
 
 const DEFAULT_START_STOP_OPTION_WAIT=false
 
-// Generous default timeout as G instances are sometime long to stop
-const DEFAULT_START_STOP_OPTION_WAIT_TIMEOUT=60
+// Generous default timeout as GCP instances are sometimes long to stop
+// Especially n1 instances which can take several minutes
+const DEFAULT_START_STOP_OPTION_WAIT_TIMEOUT=300
 
 /**
  * Google VM statuses
@@ -52,6 +53,10 @@ export class GcpClient {
     private readonly regions: RegionsClient
     private readonly machines: MachineTypesClient
     private readonly accelerators: AcceleratorTypesClient
+    private readonly diskTypes: DiskTypesClient
+    private readonly disks: DisksClient
+    private readonly snapshots: SnapshotsClient
+    private readonly images: ImagesClient
 
     constructor(name: string, projectId: string){
         this.logger = getLogger(name)
@@ -60,7 +65,27 @@ export class GcpClient {
         this.auth = new GoogleAuth()
         this.machines = new MachineTypesClient()
         this.accelerators = new AcceleratorTypesClient()
+        this.diskTypes = new DiskTypesClient()
+        this.disks = new DisksClient()
+        this.snapshots = new SnapshotsClient()
+        this.images = new ImagesClient()
         this.projectId = projectId
+    }
+
+    /**
+     * List available disk types in a given zone
+     * @param zone GCP zone (e.g. europe-west1-b)
+     * @returns Array of disk type names (e.g. ["pd-standard", "pd-balanced", "pd-ssd"])
+     */
+    async listDiskTypes(zone: string): Promise<string[]> {
+        this.logger.debug(`Listing Google Cloud disk types in zone ${zone}`)
+        try {
+            const [diskTypes] = await this.diskTypes.list({ project: this.projectId, zone })
+            this.logger.debug(`List disk types response: ${JSON.stringify(diskTypes)}`)
+            return diskTypes.map(dt => dt.name?.trim()).filter(s => s !== undefined)
+        } catch (e) {
+            throw new Error(`Failed to list Google Cloud disk types in zone ${zone} for project ${this.projectId}`, { cause: e })
+        }
     }
 
     async checkAuth() {
@@ -148,6 +173,9 @@ export class GcpClient {
         await this.startInstance(zone, instanceName, opts)
     }
 
+    /**
+     * List all GCP regions.
+     */
     async listRegions(): Promise<protos.google.cloud.compute.v1.IRegion[]> {
         this.logger.debug(`Listing Google Cloud regions`)
         try {
@@ -236,6 +264,79 @@ export class GcpClient {
             
         } catch (error) {
             throw new Error(`Failed to get instance ${instanceId} status`, { cause: error })
+        }
+    }
+
+    /**
+     * Get a disk by name in a specific zone
+     */
+    async getDisk(zone: string, diskName: string): Promise<protos.google.cloud.compute.v1.IDisk | null> {
+        this.logger.debug(`Getting disk ${diskName} in zone ${zone}`)
+        try {
+            const [disk] = await this.disks.get({
+                disk: diskName,
+                project: this.projectId,
+                zone: zone
+            })
+            this.logger.debug(`Got disk ${diskName}: ${JSON.stringify(disk)}`)
+            return disk
+        } catch (error: any) {
+            if (error?.code === 404 || error?.code === 5) {
+                return null
+            }
+            throw new Error(`Failed to get disk ${diskName} in zone ${zone}`, { cause: error })
+        }
+    }
+
+    /**
+     * Get a snapshot by name
+     */
+    async getSnapshot(snapshotName: string): Promise<protos.google.cloud.compute.v1.ISnapshot | null> {
+        this.logger.debug(`Getting snapshot ${snapshotName}`)
+        try {
+            // Extract snapshot name from URI if it's a full resource URI
+            // Format: projects/{projectId}/global/snapshots/{snapshotName}
+            const actualSnapshotName = snapshotName.includes('/') 
+                ? snapshotName.split('/').pop()! 
+                : snapshotName
+            
+            const [snapshot] = await this.snapshots.get({
+                snapshot: actualSnapshotName,
+                project: this.projectId
+            })
+            this.logger.debug(`Got snapshot ${actualSnapshotName}: ${JSON.stringify(snapshot)}`)
+            return snapshot
+        } catch (error: any) {
+            if (error?.code === 404 || error?.code === 5) {
+                return null
+            }
+            throw new Error(`Failed to get snapshot ${snapshotName}`, { cause: error })
+        }
+    }
+
+    /**
+     * Get an image by name
+     */
+    async getImage(imageName: string): Promise<protos.google.cloud.compute.v1.IImage | null> {
+        this.logger.debug(`Getting image ${imageName}`)
+        try {
+            // Extract image name from URI if it's a full resource URI
+            // Format: projects/{projectId}/global/images/{imageName}
+            const actualImageName = imageName.includes('/') 
+                ? imageName.split('/').pop()! 
+                : imageName
+            
+            const [image] = await this.images.get({
+                image: actualImageName,
+                project: this.projectId
+            })
+            this.logger.debug(`Got image ${actualImageName}: ${JSON.stringify(image)}`)
+            return image
+        } catch (error: any) {
+            if (error?.code === 404 || error?.code === 5) {
+                return null
+            }
+            throw new Error(`Failed to get image ${imageName}`, { cause: error })
         }
     }
 

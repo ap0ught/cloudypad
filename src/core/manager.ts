@@ -1,4 +1,5 @@
-import { CommonInstanceInput, InstanceEvent, InstanceEventEnum, InstanceStateV1 } from './state/state';
+import { CommonInstanceInput, CommonProvisionInputV1, InstanceEvent, InstanceEventEnum, InstanceStateV1 } from './state/state';
+import { DATA_DISK_STATE, DATA_DISK_STATE_LIVE, DATA_DISK_STATE_SNAPSHOT, INSTANCE_SERVER_STATE, INSTANCE_SERVER_STATE_ABSENT, INSTANCE_SERVER_STATE_PRESENT } from './const';
 import { InstanceProvisioner } from './provisioner';
 import { InstanceConfigurator } from './configurator';
 import { getLogger } from '../log/utils';
@@ -8,7 +9,7 @@ import { ConfiguratorFactory } from './submanager-factory';
 import { ProvisionerFactory } from './submanager-factory';
 import { RunnerFactory } from './submanager-factory';
 import { AnsibleConfiguratorOptions } from '../configurators/ansible';
-import { Retrier } from '../tools/retrier';
+import { ActionRetrier } from '../tools/retrier';
 
 const DEFAULT_RETRIES = 1
 const DEFAULT_RETRY_DELAY_SECONDS = 10
@@ -26,18 +27,35 @@ export interface ActionOptions {
      * Delay between retries in seconds. Default: 10 seconds
      */
     retryDelaySeconds?: number
+
+    /**
+     * Cancel any stuck Pulumi operations before running the action. Default: false
+     */
+    pulumiCancel?: boolean
 }
 
 export interface DeployOptions extends ActionOptions {
+    /**
+     * Override Ansible arguments to pass to configuration, e.g. ["--tags", "nvidia-container-toolkit"]
+     */
+    ansibleArgsOverride?: string[]
 }
 
 export interface ConfigureOptions extends ActionOptions {
+    /**
+     * Override Ansible arguments to pass to configuration, e.g. ["--tags", "nvidia-container-toolkit"]
+     */
+    ansibleArgsOverride?: string[]
 }
 
 export interface ProvisionOptions extends ActionOptions {
 }
 
 export interface StartOptions extends StartStopOptions, ActionOptions {
+    /**
+     * Override Ansible arguments passed to configuration, e.g. ["-t", "data-disk"]
+     */
+    ansibleArgsOverride?: string[]
 }
 
 export interface StopOptions extends StartStopOptions, ActionOptions {
@@ -101,7 +119,7 @@ export interface InstanceStatus {
 }
 
 /**
- * Main operation interface for an instance to start/stop/restart and run various operations.
+ * Main operation interface to manage an instance: deploy, provision configure, start/stop/restart, destroy...
  */
 export interface InstanceManager {
     name(): string
@@ -197,39 +215,6 @@ export interface GenericInstanceManagerArgs<ST extends InstanceStateV1> {
      * Factory to build configurators
      */
     configuratorFactory: ConfiguratorFactory<ST, AnsibleConfiguratorOptions>
-
-    options?: {
-
-        /**
-         * Delete instance server on instance stop configuration.
-         * 
-         * If enabled, will cause instance server (and its associated disks) to be deleted on instance stop using Provisioner.
-         * On next start, instance will be re-provisioned and re-configured with a fresh instance server. 
-         * 
-         * This options should be enabled when: 
-         * - Both OS root disk and data disk are set to avoid data loss. If data disk is not set, 
-         *   game data held on instance server will be deleted on instance stop.
-         * - Instance is configured to use a pre-provisioned Image as OS root disk to avoid long starting time
-         *   as each start will run provision and configuration.
-         */
-        deleteInstanceServerOnStop?: {
-
-            /**
-             * Enable instance deletion on stop.
-             */
-            enabled: boolean,
-
-            /**
-             * Additional Ansible arguments to pass to after-start reconfiguration.
-             * These flags are specific to post-start reconfiguration to avoid re-running
-             * full configuration on every start and should be tailored to specific provider needs
-             * to ensure faster start while preserving functionality.
-             * 
-             * Ansible configuration args from CLI or state are ignored during post-start reconfiguration.
-             */
-            postStartReconfigurationAnsibleAdditionalArgs?: string[]
-        }
-    }
 }
 
 /**
@@ -254,6 +239,14 @@ const ALWAYS_ANSIBLE_ADDITIONAL_ARGS = ['-e', '\'ansible_ssh_common_args="-o Str
  * 
  * The concrete instance type is not known by this class: a per-provider factory is used 
  * to build each sub-managers.
+ * 
+ * Each action function (stop, start, configure, provision, etc.) is a wrapper with retry around
+ * low-level action functions (doStart, doStop, doConfigure, doProvision, etc.).
+ * - a top-level action like deploy() may rely on other top-level actions like configure()
+ *   or call underlying low-level actions like doConfigure wrapped in a retry().
+ *   They may also container logic like retry pattern, starting instance before configuring, etc.
+ * - a low-level action like doConfigure() must NOT call another low-level NOR top-level action.
+ *   These functions should only strictly do the required action without any mre logic.
  */
 export class GenericInstanceManager<ST extends InstanceStateV1> implements InstanceManager {
 
@@ -285,14 +278,34 @@ export class GenericInstanceManager<ST extends InstanceStateV1> implements Insta
 
         this.logger.debug(`Configuring instance ${this.name()}`)
 
-        const currentState = await this.getState()
-        const configurationAnsibleAdditionalArgs = currentState.configuration.input.ansible?.additionalArgs ? 
-            [currentState.configuration.input.ansible.additionalArgs] : undefined
+        // Prefer CLI-provided args override over state-stored args
+        let configurationAnsibleAdditionalArgs: string[] | undefined
+        if (opts?.ansibleArgsOverride) {
+            configurationAnsibleAdditionalArgs = opts.ansibleArgsOverride
+        } else {
+            const currentState = await this.getState()
+            configurationAnsibleAdditionalArgs = currentState.configuration.input.ansible?.additionalArgs ? 
+                [currentState.configuration.input.ansible.additionalArgs] : undefined
+        }
 
         await this.addEvent(InstanceEventEnum.ConfigurationBegin)
+
+        // before configuring, check instance is running as it's possible user would call configure() directly without starting the instance first
+        // start it if needed
+        const currentStatus = await this.getInstanceStatus()
+        if(currentStatus.serverStatus !== ServerRunningStatus.Running){
+
+            this.logger.debug(`About to run configuration for instance ${this.name()} but it's not running, starting it first...`)
+
+            await this.doWithRetry(async () => {
+                await this.doStart({ wait: true })
+            }, 'Pre-configure start', opts)
+        }
+
         await this.doWithRetry(async () => {
             await this.doConfigure(configurationAnsibleAdditionalArgs)
         }, 'Configuration', opts)
+        
         await this.addEvent(InstanceEventEnum.ConfigurationEnd)
     }
 
@@ -301,14 +314,31 @@ export class GenericInstanceManager<ST extends InstanceStateV1> implements Insta
 
         await this.addEvent(InstanceEventEnum.ProvisionBegin)
         await this.doWithRetry(async () => {
-            await this.doProvision()
+            await this.doProvision(opts)
         }, 'Provision', opts)
         await this.addEvent(InstanceEventEnum.ProvisionEnd)
     }
 
     async deploy(opts?: DeployOptions): Promise<void> {
+        // We'll perform a full provision and configuration to ensure instance is fully provisioned and configured
+        // we need instance server and data disk to be present
+        await this.updateProvisionInputRuntime({
+            instanceServerState: INSTANCE_SERVER_STATE_PRESENT,
+            dataDiskState: DATA_DISK_STATE_LIVE
+        })
+        
         await this.provision(opts)
         await this.configure(opts)
+
+        // After provision and configure, create base image snapshot if enabled
+        const currentState = await this.getState()
+        if (currentState.provision.input.baseImageSnapshot?.enable) {
+            console.info("")
+            console.info("Creating a base image snapshot of your instance. This will stop the instance temporarily and may take several minutes.")
+            console.info("The snapshot is used to speed up future starts by skipping the initial setup steps.")
+            console.info("")
+            await this.doBaseImageSnapshotProvision(opts)
+        }
     }
 
     async destroy(opts?: DestroyOptions): Promise<void> {
@@ -325,6 +355,41 @@ export class GenericInstanceManager<ST extends InstanceStateV1> implements Insta
     async start(opts?: StartOptions): Promise<void> {
 
         this.logger.debug(`Starting instance ${this.name()}`)
+
+        const currentState = await this.getState()
+
+        await this.doWithRetry(async () => {
+
+            // if deleteInstanceServerOnStop or dataDiskSnapshot is enabled, we need to provision the instance
+            // as instance server may not exist and/or data disk snapshot may need to be restored
+            if(currentState.provision.input.deleteInstanceServerOnStop ||
+                currentState.provision.input.dataDiskSnapshot?.enable
+            ){
+                // Update inputs to restore live data disk from snapshot (if any)
+                // and ensure instance server exists
+                await this.updateProvisionInputRuntime({
+                    instanceServerState: INSTANCE_SERVER_STATE_PRESENT,
+                    dataDiskState: DATA_DISK_STATE_LIVE
+                })
+
+                await this.doProvision(opts)
+            
+                // Check if server is actually running after provision
+                // Provisioning may not have started the server if it was existing but not running
+                // eg. if instance server was stopped by auto-stop feature rather than stop() operation
+                const runner = await this.buildRunner()
+                const serverStatus = await runner.serverStatus()
+                if(serverStatus !== ServerRunningStatus.Running){
+                    this.logger.debug(`Server is not running after provision (status: ${serverStatus}), starting it now`)
+                    await runner.start({ wait: true })
+                }
+            
+                // always reconfigured instance using limited Ansible run to avoid re-running full configuration on every start
+                // Use ansibleArgsOverride if provided, otherwise use default tags
+                const ansibleArgs = opts?.ansibleArgsOverride ?? ['-t', 'ratelimit,data-disk,sunshine']
+                await this.doConfigure(ansibleArgs)
+            }
+        }, 'Pre-start reconfiguration', opts)
 
         await this.addEvent(InstanceEventEnum.StartBegin)
         await this.doWithRetry(async () => {
@@ -374,19 +439,28 @@ export class GenericInstanceManager<ST extends InstanceStateV1> implements Insta
     //
 
     /**
-     * Destroy instance server using provisioner and update state with provision output.
-     * Reset configuration output to undefined.
+     * Update provision input runtime state in state.
+     * These control what the provisioner does (create/destroy server, disk state).
      */
-    async doDestroyInstanceServer(): Promise<void> {
-        const provisioner = await this.buildProvisioner()
-        const newOutputs = await provisioner.destroyInstanceServer()
-        await this.stateWriter.setProvisionOutput(this.instanceName, newOutputs)
-        await this.stateWriter.setConfigurationOutput(this.instanceName, undefined)
+    private async updateProvisionInputRuntime(runtime: {
+        instanceServerState?: INSTANCE_SERVER_STATE,
+        dataDiskState?: DATA_DISK_STATE
+    }): Promise<void> {
+        const currentState = await this.stateWriter.getCurrentState(this.instanceName)
+        const updatedInput: CommonProvisionInputV1 = {
+            ...currentState.provision.input,
+            runtime: {
+                instanceServerState: runtime.instanceServerState,
+                dataDiskState: runtime.dataDiskState
+            }
+        }
+        await this.stateWriter.setProvisionInput(this.instanceName, updatedInput)
+        this.logger.debug(`Updated provision input runtime: ${JSON.stringify(runtime)}`)
     }
 
     /**
      * Configure instance using Ansible configurator and update state with configuration output.
-     * Decorellated from mainn configure() method as it may be run for configuration and as post-start reconfiguration by start().
+     * Decorellated from main configure() method as it may be run for configuration and as post-start reconfiguration by start().
      */
     async doConfigure(additionalAnsibleArgs?: string[]): Promise<void> {
 
@@ -394,6 +468,7 @@ export class GenericInstanceManager<ST extends InstanceStateV1> implements Insta
         const configurator = await this.buildConfigurator({
             additionalAnsibleArgs: ALWAYS_ANSIBLE_ADDITIONAL_ARGS.concat(additionalAnsibleArgs ?? [])
         })
+
         const output = await configurator.configure()
         
         this.logger.debug(`Configuration output for instance ${this.name()}: ${JSON.stringify(output)}`)
@@ -404,30 +479,101 @@ export class GenericInstanceManager<ST extends InstanceStateV1> implements Insta
     /**
      * Provision instance using provisioner and update state with provision output.
      * Decorellated from main provision() method as it may be run for configuration and as post-start reconfiguration by start().
+     * 
+     * Runs provisioning in two steps:
+     * 1. data snapshot provision: update or create data snapshot based on provided inputs
+     *    eg. on stop will create a snapshot from data disk, on start won't do anything.
+     * 2. main provision: manages main infrastructure based on runtime flags
+     *    eg. will restore live data disk from snapshot if any, create a new data disk if none exists.
+     * 
+     * State is updated after each step to ensure outputs are persisted.
      */
-    async doProvision(): Promise<void> {
+    async doProvision(opts?: ActionOptions): Promise<void> {
 
         this.logger.debug(`Do provision instance ${this.name()}`)
 
+        const currentState = await this.getState()
         const provisioner = await this.buildProvisioner()
-        const newOutputs = await provisioner.provision()
 
-        this.logger.debug(`Provision output for instance ${this.name()}: ${JSON.stringify(newOutputs)}`)
+        // Data snapshot provision. Only call if dataDiskSnapshot is enabled
+        // and we have data disk snapshot ID output
+        if(currentState.provision.input.dataDiskSnapshot?.enable && currentState.provision.output?.dataDiskId){
+            this.logger.debug(`Running data snapshot provision for instance ${this.name()}`)
+            const snapshotOutputs = await provisioner.dataSnapshotProvision({
+                pulumiCancel: opts?.pulumiCancel
+            })
+            this.logger.debug(`Data snapshot provision output for instance ${this.name()}: ${JSON.stringify(snapshotOutputs)}`)
+            await this.stateWriter.setProvisionOutput(this.instanceName, snapshotOutputs)
+        }
 
-        await this.stateWriter.setProvisionOutput(this.instanceName, newOutputs)
+        // Main provision (manages server, disks, network...)
+        // Rebuild provisioner to get updated state with snapshot outputs
+        const provisionerForMain = await this.buildProvisioner()
+        this.logger.debug(`Running main provision for instance ${this.name()}`)
+        const mainOutputs = await provisionerForMain.mainProvision({
+            pulumiCancel: opts?.pulumiCancel
+        })
+        this.logger.debug(`Main provision output for instance ${this.name()}: ${JSON.stringify(mainOutputs)}`)
+        await this.stateWriter.setProvisionOutput(this.instanceName, mainOutputs)
+    }
+
+    /**
+     * Create a base image snapshot from current instance server root disk.
+     * Will stop instance to ensure data consistency before creating snapshot.
+     */
+    private async doBaseImageSnapshotProvision(opts?: ActionOptions): Promise<void> {
+        this.logger.debug(`Do base image snapshot provision for instance ${this.name()}`)
+
+        const currentState = await this.getState()
+
+        // If imageId is set in input, use it directly as passthrough (user provides their own image)
+        if (currentState.provision.input.imageId) {
+            this.logger.debug(`Using provided imageId as baseImageId passthrough: ${currentState.provision.input.imageId}`)
+
+            const currentOutput = currentState.provision.output
+            if(!currentOutput){
+                throw new Error(`Base image snapshot provision for instance ${this.name()} failed: no provision output. ` +
+                    `Base image provision requires existing provision output to be run.`)
+            }
+
+            const outputs = {
+                ...currentOutput,
+                baseImageId: currentState.provision.input.imageId,
+            }
+            await this.stateWriter.setProvisionOutput(this.instanceName, outputs)
+            return
+        }
+
+        // Stop instance to ensure data consistency before creating snapshot
+        // Directly via runner, not via this.stop(), to ensure disk is kept before creating snapshot
+        // We don't want a full "stop" of all resources which may delete the instance server and root disk
+        // but a simple instance server stop from which we'll create a base image
+        await this.doWithRetry(async () => {
+            const runner = await this.buildRunner()
+            await runner.stop({ wait: true })
+        }, 'Pre-snapshot stop', opts)
+        
+        // Create base image snapshot
+        await this.doWithRetry(async () => {
+            const provisioner = await this.buildProvisioner()
+            const outputs = await provisioner.baseImageSnapshotProvision({
+                pulumiCancel: opts?.pulumiCancel
+            })
+            this.logger.debug(`Base image snapshot provision output for instance ${this.name()}: ${JSON.stringify(outputs)}`)
+            await this.stateWriter.setProvisionOutput(this.instanceName, outputs)
+        }, 'Base image snapshot', opts)
+        
+        // Start instance back up via runner
+        await this.doWithRetry(async () => {
+            const runner = await this.buildRunner()
+            await runner.start({ wait: true })
+        }, 'Post-snapshot start', opts)
     }
 
     /**
      * Start instance using runner.
      */
     async doStart(opts?: StartOptions): Promise<void> {
-
-        // if deleteInstanceServerOnStop is enabled, instance server may have been deleted on last instance stop
-        // so we need to re-provision and re-configure instance using specific Ansible args
-        if(this.args.options?.deleteInstanceServerOnStop?.enabled){
-            await this.doProvision()
-            await this.doConfigure(this.args.options.deleteInstanceServerOnStop.postStartReconfigurationAnsibleAdditionalArgs)
-        }
 
         // always start instance as provisioning and configuring may not start the server for all providers
         // and startOptions logic is ported by runner
@@ -436,28 +582,71 @@ export class GenericInstanceManager<ST extends InstanceStateV1> implements Insta
     }
 
     /**
-     * Stop instance using runner.
+     * Stop instance using runner and optionally delete resources via provisioner.
+     * 
+     * Stop flow:
+     * 1. Stop instance server via runner
+     * 2. If deleteInstanceServerOnStop or dataDiskSnapshot is enabled:
+     *    - Update state input runtime (noInstanceServer, noDataDisk, createDataDiskSnapshot)
+     *    - Call provisioner to handle resource deletion and snapshot creation
+     * 
+     * In itself stop is not only managed via a stop operation on instance server, but also via infra as code
+     * with input setting desired state of resources for a "stop" status.
      */
     async doStop(opts?: StopOptions): Promise<void> {
+        const currentState = await this.getState()
         const runner = await this.buildRunner()
-        
-        // if instance server is deleted on stop, check server status first as it may not exist
-        if(this.args.options?.deleteInstanceServerOnStop){
-            const serverStatus = await runner.serverStatus()
-            if(serverStatus === ServerRunningStatus.Unknown){
-                this.logger.info(`Instance ${this.name()} does not have a server. No need to stop.`)
-                return
+
+        // First stop the instance via runner (unless server already stopped)
+        const serverStatus = await runner.serverStatus()
+        let serverStopSuccess = false
+        if(serverStatus === ServerRunningStatus.Stopped){
+            serverStopSuccess = true
+            this.logger.info(`Instance ${this.name()} is already stopped, skipping stop operation.`)
+        } else if(serverStatus !== ServerRunningStatus.Unknown){
+            // if data disk snapshot is enabled, force stop wait to ensure data consistency
+            // creating a data disk snapshot on a still running instance may corrupt data
+            const forceStopWait = currentState.provision.input.dataDiskSnapshot?.enable ?? false
+
+            try {
+                await runner.stop({ 
+                    ...opts, 
+                    wait: forceStopWait || opts?.wait
+                })
+                serverStopSuccess = true
+            } catch (error) {
+                this.logger.warn(`Failed to stop instance ${this.name()}`, error)
             }
+        } else {
+            // this runs when server status is unknown
+            // instance server may have been deleted (by previous stop run)
+            // it's also possible we somehow lost track of the server (eg. provider API issue)
+            // handled below since we did not confirm server deletion with serverStopSuccess=true
+            // and we risk a dangling server
+            this.logger.info(`Instance ${this.name()} does not have a server (or server in unknown state). Skipping stop operation.`)
         }
 
-        // always cleanly stop instance to avoid data inconsistency 
-        // as instance server may be deleted on stop and deleting without stopping may cause data inconsistency
-        // and stopOptions logic is ported by runner
-        await runner.stop(opts)
+        // If provisioning is required (delete instance server or create snapshot), update runtime input state and call provision
+        // we need to update input to pass proper snapshot ID and desired instance server state to provisioner
+        if(currentState.provision.input.deleteInstanceServerOnStop || 
+            currentState.provision.input.dataDiskSnapshot?.enable
+        ){
+            await this.updateProvisionInputRuntime({
+                // on stop, if deleteInstanceServerOnStop is enabled, we need to explicitely delete the server
+                // otherwise leave undefined to keep default behavior
+                instanceServerState: currentState.provision.input.deleteInstanceServerOnStop ? INSTANCE_SERVER_STATE_ABSENT : undefined,
 
-        // destroy instance server if deleteInstanceServerOnStop is enabled
-        if(this.args.options?.deleteInstanceServerOnStop?.enabled){
-            await this.doDestroyInstanceServer()
+                // on stop, if dataDiskSnapshot is enabled, we need to create a snapshot, otherwise keep live disk
+                dataDiskState: currentState.provision.input.dataDiskSnapshot?.enable ? DATA_DISK_STATE_SNAPSHOT : DATA_DISK_STATE_LIVE
+            })
+
+            // run provision will remove server (if needed) and remove data disk (if needed) based on updated inputs
+            await this.doProvision(opts)
+
+            // Reset configuration output since server was deleted, it's not configured anymore
+            if(currentState.provision.input.deleteInstanceServerOnStop){
+                await this.stateWriter.setConfigurationOutput(this.instanceName, undefined)
+            }
         }
     }
 
@@ -471,7 +660,9 @@ export class GenericInstanceManager<ST extends InstanceStateV1> implements Insta
 
     async doDestroy(opts?: DestroyOptions): Promise<void> {
         const provisioner = await this.buildProvisioner()
-        await provisioner.destroy()
+        await provisioner.destroy({
+            pulumiCancel: opts?.pulumiCancel
+        })
         await this.stateWriter.setProvisionOutput(this.instanceName, undefined)
         await this.stateWriter.setConfigurationOutput(this.instanceName, undefined)
     }
@@ -483,7 +674,7 @@ export class GenericInstanceManager<ST extends InstanceStateV1> implements Insta
      * @param retryOptions Number of retries and delay between retries.
      */
     private async doWithRetry<R>(actionFn: () => Promise<R>, actionName: string, retryOptions?: { retries?: number, retryDelaySeconds?: number }): Promise<R> {
-        const retrier = new Retrier({
+        const retrier = new ActionRetrier({
             actionFn: actionFn,
             actionName: actionName,
             retries: retryOptions?.retries ?? DEFAULT_RETRIES,

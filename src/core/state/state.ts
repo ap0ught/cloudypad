@@ -6,8 +6,13 @@ import { z } from "zod"
 import { CLOUDYPAD_CONFIGURATOR_LIST } from "../const"
 
 const CommonProvisionOutputV1Schema = z.object({
-    host: z.string().describe("Instance hostname or IP address"),
-    dataDiskId: z.string().describe("Unique ID of data disk (if any) which can be found on instance /dev/disk/by-id/<data-disk-id>").optional(),
+    host: z.string().describe("Instance hostname or IP address. Can be used by Moonlight to pair with instance. Maybe be an IP or a FQDN."),
+    publicIPv4: z.string().optional().describe("Instance public IPv4 address if any. IPv4 may change in instance lifecycle, prefer using host unless IP is prefered for specific use cases."),
+    dataDiskId: z.string().optional().describe("Unique ID of data disk for infrastructure operations (snapshots, etc.). Format is provider-specific."),
+    dataDiskSnapshotId: z.string().optional().describe("Unique ID of data disk snapshot (if any) which can be used to restore data disk"),
+    baseImageId: z.string().optional().describe("Unique ID of base image (if any) created from initial deploy, used to restore root disk with configured system on instance creation"),
+    machineDataDiskLookupId: z.string().optional().describe("Identifier used to find and mount the data disk on the VM. Format depends on provider (e.g., volume UUID, LUN number, disk name)."),
+    machineDataDiskMountMethod: z.string().optional().describe("Method to look up and mount data disk on VM (e.g., 'default', 'azure_lun'). If undefined, uses default method."),
 }).passthrough()
 
 const CommonProvisionInputV1Schema = z.object({
@@ -27,7 +32,24 @@ const CommonProvisionInputV1Schema = z.object({
         return setAuthMethods === 1
     }, {
         message: "Exactly one of privateKeyPath, privateKeyContentBase64 or passwordBase64 must be set"
-    })
+    }),
+    dataDiskSnapshot: z.object({
+        enable: z.boolean().describe("Whether to enable data disk snapshot on stop. Default: false"),
+    }).optional().describe("Data disk snapshot configuration for cost reduction"),
+    baseImageSnapshot: z.object({
+        enable: z.boolean().describe("Whether to enable base image snapshot after initial deploy. Default: false"),
+        keepOnDeletion: z.boolean().optional().describe("Whether to keep base image on instance deletion. Default: false"),
+    }).optional().describe("Base image snapshot configuration to capture configured system (NVIDIA drivers, Cloudy Pad, etc.)"),
+    deleteInstanceServerOnStop: z.boolean().describe("Whether instance server should be deleted on instance stop and re-created on next start").optional(),
+    imageId: z.string().optional().describe("Existing image ID for instance server. If set, disk size must be equal or greater than image size. Format is provider-specific (e.g., AMI ID for AWS, image ID for GCP, etc.)."),
+    
+    // Runtime state (updated by manager before calling provision to control provisioner behavior)
+    // These represent the desired state of resources and are updated on start/stop operations
+    // Clearly separated from user-defined config to avoid confusion
+    runtime: z.object({
+        instanceServerState: z.enum(["present", "absent"]).optional().describe("Desired instance server state. present: instance server should exist; absent: should be deleted"),
+        dataDiskState: z.enum(["live", "snapshot"]).optional().describe("Desired data disk state. live: disk exists, created from existing snapshot if possible. snapshot: snapshot exists, created from existing disk if possible (disk is deleted after snapshot created). Default: live"),
+    }).optional().describe("Runtime state flags updated by manager on start/stop operations"),
 }).passthrough()
 
 const CommonConfigurationInputV1Schema = z.object({
@@ -35,6 +57,9 @@ const CommonConfigurationInputV1Schema = z.object({
         enable: z.boolean().describe("Whether Auto Stop is enabled"),
         timeoutSeconds: z.number().describe("Auto Stop timeout in seconds").optional(),
     }).optional(),
+    ratelimit: z.object({
+        maxMbps: z.number().describe("Maximum rate limit in Mbps. 0 to disable rate limiting.").optional(),
+    }).optional().describe("Rate limit egress bandwidth (eg. to limit egress cost with some providers)"),
     // Set both sunshine and wolf nullish as enabling one should enforce disabling the other.
     // As optional (~= undefined) could cause a race condition where both are enabled
     // (eg. merging a state with Sunshine enabled but "undefined" in memory would keep it enabled
@@ -46,6 +71,10 @@ const CommonConfigurationInputV1Schema = z.object({
         imageTag: z.string().optional().describe("Sunshine container image tag. Default to current Cloudy Pad version"),
         imageRegistry: z.string().optional().describe("Sunshine container image registry. Default to Cloudy Pad registry"),
         serverName: z.string().optional().describe("Sunshine server name that will appear in Moonlight. Default to instance name."),
+        maxBitrateKbps: z.number().optional().describe("Maximum bitrate in Kbps for Sunshine streaming. Passed as Sunshine config max_bitrate. Default: 0"),
+        autoheal: z.object({
+            enable: z.boolean().optional().describe("Whether to enable Sunshine container autoheal. Default: true"),
+        }).optional(),
     })
     .nullish(),
     keyboard: z.object({

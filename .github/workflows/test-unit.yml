@@ -15,27 +15,13 @@ env:
 jobs:
   unit-test:
     name: Unit tests
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - uses: nixbuild/nix-quick-install-action@v30
-
-      - uses: nix-community/cache-nix-action@v6
-        with:
-          primary-key: nix-${{ runner.os }}
-          restore-prefixes-first-match: nix-${{ runner.os }}
-      
-      - uses: actions/cache@v3
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('**/package*.json') }}
-          restore-keys: |
-            ${{ runner.os }}-npm-
-      
-      - run: nix develop -c npm i
+      - run: nix develop -c pnpm i
 
       - name: Run standard unit tests
         run: nix develop -c task test-unit
@@ -45,15 +31,12 @@ jobs:
 
   build:
     name: Build Core container image
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     
     steps:
 
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -61,13 +44,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+          logout: false
 
-      - uses: nixbuild/nix-quick-install-action@v30
-
-      - uses: nix-community/cache-nix-action@v6
-        with:
-          primary-key: nix-${{ runner.os }}
-          restore-prefixes-first-match: nix-${{ runner.os }}
       - name: test analytics key match
         run: nix develop -c task test-analytics-key-match
 
@@ -83,16 +61,11 @@ jobs:
 
   build-sunshine:
     name: Build Sunshine container image
-    runs-on: ubuntu-24.04
+    runs-on: self-hosted
     steps:
 
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          platforms: linux/amd64,linux/arm64
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -100,13 +73,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: nixbuild/nix-quick-install-action@v30
-
-      - uses: nix-community/cache-nix-action@v6
-        with:
-          primary-key: nix-${{ runner.os }}
-          restore-prefixes-first-match: nix-${{ runner.os }}
+          logout: false
 
       - name: Build container image
         run: nix develop -c task build-sunshine-container-ci
@@ -147,7 +114,6 @@ jobs:
       matrix:
         os:
         - macos-14
-        - macos-13
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -192,15 +158,21 @@ jobs:
 
   test-flake-package:
     name: Test Flake package
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - uses: nixbuild/nix-quick-install-action@v30
-      
       - run: nix build .#
 
-      # Disable this for now as latets version does not respect no-tty properly      
-      # - run: CLOUDYPAD_CONTAINER_NO_TTY=true nix run .# -- --version
+  test-doc-links:
+    name: Test documentation links
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Run documentation link check test
+        run: nix develop -c task test-doc-links

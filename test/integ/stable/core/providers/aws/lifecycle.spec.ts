@@ -1,12 +1,13 @@
 import * as assert from 'assert';
 import { AwsClient } from '../../../../../../src/providers/aws/sdk-client';
 import { AwsInstanceStateV1 } from '../../../../../../src/providers/aws/state';
-import { getIntegTestCoreConfig } from '../../../../utils';
+import { getIntegTestCoreConfig, runVerifyPlaybook } from '../../../../utils';
 import { AwsProviderClient } from '../../../../../../src/providers/aws/provider';
 import { ServerRunningStatus } from '../../../../../../src/core/runner';
 import { getLogger } from '../../../../../../src/log/utils';
 import { CloudypadClient } from '../../../../../../src/core/client';
 import { PUBLIC_IP_TYPE_STATIC } from '../../../../../../src/core/const';
+import { InstanceStateName } from '@aws-sdk/client-ec2';
 
 describe('AWS lifecycle', () => {
     const logger = getLogger("test-aws-lifecycle");
@@ -38,6 +39,11 @@ describe('AWS lifecycle', () => {
         }
         throw new Error(`Instance did not become ready after ${maxAttempts} attempts`);
     }
+
+    async function runVerify(opts: { createDataDiskTestFile?: boolean, checkDataDiskTestFile?: boolean } = {}): Promise<void> {
+        const state = await getCurrentTestState()
+        await runVerifyPlaybook(instanceName, state, opts)
+    }
     
     it('should initialize instance state', async () => {
         assert.strictEqual(currentInstanceId, undefined);
@@ -48,10 +54,18 @@ describe('AWS lifecycle', () => {
                 user: "ubuntu",
             },
             instanceType: instanceType,
-            diskSize: 100,
+            diskSize: 20, // voluntary small disk as AWS is very slow to create disk snapshots
             publicIpType: PUBLIC_IP_TYPE_STATIC,
             region: region,
             useSpot: false,
+            dataDiskSizeGb: 5, // voluntary small disk as AWS is very slow to create disk snapshots
+            baseImageSnapshot: {
+                enable: true,
+            },
+            dataDiskSnapshot: {
+                enable: true,
+            },
+            deleteInstanceServerOnStop: true,
         }, {
             sunshine: {
                 enable: true,
@@ -75,7 +89,31 @@ describe('AWS lifecycle', () => {
         const instance = instances.find(instance => instance.InstanceId === currentInstanceId);
         assert.ok(instance);
         assert.strictEqual(instance.InstanceType, instanceType);
-    }).timeout(20*60*1000); // 20 minutes timeout as deployment may be long
+    }).timeout(60*60*1000); // 60 minutes timeout as deployment and snapshot + AMI creation may be long
+
+    it('should have valid instance outputs', async () => {
+        const awsClient = getAwsClient();
+        const state = await getCurrentTestState();
+
+        // should have a machineDataDiskLookupId for Ansible data disk mount
+        assert.ok(state.provision.output?.machineDataDiskLookupId, "machineDataDiskLookupId should be in output")
+
+        assert.ok(state.provision.output?.dataDiskId, "dataDiskId should be in output");
+        const dataVol = await awsClient.getVolume(state.provision.output.dataDiskId);
+        assert.ok(dataVol, "Data disk should exist in AWS");
+        assert.strictEqual(dataVol.VolumeId, state.provision.output.dataDiskId, "Data disk ID should match state output");
+    
+        assert.ok(state.provision.output?.rootDiskId, "rootDiskId should be in output");
+        const rootVol = await awsClient.getVolume(state.provision.output.rootDiskId);
+        assert.ok(rootVol, "Root disk should exist in AWS");
+        assert.strictEqual(rootVol.VolumeId, state.provision.output.rootDiskId, "Root disk ID should match state output");
+    
+        assert.ok(state.provision.output?.baseImageId, "baseImageId should be in output");
+        const image = await awsClient.getImage(state.provision.output.baseImageId);
+        assert.ok(image, "Base image should exist in AWS");
+        assert.strictEqual(image.ImageId, state.provision.output.baseImageId, "Base image ID should match state output");
+
+    }).timeout(10000);
  
     it('should update instance', async () => {
         const instanceUpdater = awsProviderClient.getInstanceUpdater();
@@ -83,6 +121,7 @@ describe('AWS lifecycle', () => {
             instanceName: instanceName,
             provisionInputs: {
                 instanceType: "g4dn.2xlarge",
+                dataDiskSizeGb: 6,
             }, 
         });
 
@@ -100,7 +139,12 @@ describe('AWS lifecycle', () => {
         assert.ok(instance);
         assert.strictEqual(instance.InstanceType, "g4dn.2xlarge");
 
-    }).timeout(20*60*1000);
+        assert.ok(state.provision.output?.dataDiskId);
+        
+        const volume = await awsClient.getVolume(state.provision.output.dataDiskId);
+        assert.strictEqual(volume?.Size, 6); // 6GB in bytes
+
+    }).timeout(30*60*1000);
 
     it('should have a valid instance server output with existing server', async () => {
         const state = await getCurrentTestState();
@@ -118,18 +162,41 @@ describe('AWS lifecycle', () => {
         await waitForInstanceReadiness();
     }).timeout(2*60*1000);
 
+    it('should verify instance configuration after deployment', async () => {
+        await runVerify({ createDataDiskTestFile: true })
+    }).timeout(5*60*1000);
+
     // run twice for idempotency
     for (let i = 0; i < 2; i++) { 
 
         it(`should stop instance (${i+1}/2 for idempotency)`, async () => {
+            const stateBeforeStop = await getCurrentTestState();
+            const instanceIdBeforeStop = stateBeforeStop.provision.output?.instanceId;
+
             const instanceManager = await awsProviderClient.getInstanceManager(instanceName);
             await instanceManager.stop({ wait: true });
 
             const instanceStatus = await instanceManager.getInstanceStatus();
 
-            assert.strictEqual(instanceStatus.configured, true);
-            assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Stopped);
-        }).timeout(20*60*1000); // 20 in timeout as stopping g4dn instances is very long
+            // server has been deleted, so it's not configured anymore and server is in unknown state
+            assert.strictEqual(instanceStatus.configured, false);
+            assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Unknown);
+
+            // Check that instance server is not found anymore (since deleteInstanceServerOnStop is enabled)
+            const awsClient = getAwsClient();
+            if (instanceIdBeforeStop) {
+                const instanceState = await awsClient.getInstanceState(instanceIdBeforeStop);
+                assert.ok(instanceState === undefined || instanceState === InstanceStateName.terminated);
+            }
+
+            // Check data disk snapshot has been created (find ID in state and check on AWS)
+            const stateAfterStop = await getCurrentTestState();
+            assert.strictEqual(stateAfterStop.provision.output?.instanceId, undefined);
+            assert.strictEqual(stateAfterStop.provision.output?.dataDiskId, undefined);
+            assert.ok(stateAfterStop.provision.output?.dataDiskSnapshotId, "dataDiskSnapshotId should be in output after stop");
+            const snapshotExists = await awsClient.checkSnapshotExists(stateAfterStop.provision.output.dataDiskSnapshotId);
+            assert.strictEqual(snapshotExists, true, `Data disk snapshot ${stateAfterStop.provision.output.dataDiskSnapshotId} should exist on AWS`);
+        }).timeout(60*60*1000); // 1h timeout as stopping g4dn instances and creating data disk snapshot is very long
     }
 
     // run twice for idempotency
@@ -145,11 +212,21 @@ describe('AWS lifecycle', () => {
             assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Running);
 
             const state = await getCurrentTestState();
-            assert.ok(state.provision.output?.instanceId);
+            assert.ok(state.provision.output?.instanceId, "instanceId should exist after start");
+            assert.ok(state.provision.output?.dataDiskId, "dataDiskId should exist after start");
+            assert.ok(state.provision.output?.dataDiskSnapshotId, "dataDiskSnapshotId should exist after start");
 
             currentInstanceId = state.provision.output.instanceId;
-        }).timeout(2*60*1000);
+        }).timeout(20*60*1000);
     }
+
+    it('should wait for instance readiness after start', async () => {
+        await waitForInstanceReadiness();
+    }).timeout(2*60*1000);
+
+    it('should verify instance configuration after stop/start', async () => {
+        await runVerify({ checkDataDiskTestFile: true })
+    }).timeout(5*60*1000);
 
     it('should restart instance', async () => {
 

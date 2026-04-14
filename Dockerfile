@@ -1,16 +1,35 @@
-ARG NODE_VERSION="22.13.1-bookworm-slim"
-FROM node:${NODE_VERSION} AS build
+# https://hub.docker.com/_/node
+ARG NODE_VERSION="25.6.1-trixie-slim"
+FROM node:${NODE_VERSION} AS base
 
+# Global tooling
 RUN apt update && apt install -y \
+    python3-pip \
     curl \
-    unzip 
+    unzip \
+    ssh \
+    sshpass \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# pnpm for cache efficiency
+# Requires PNPM_HOME on PATH
+# Cache mounts are used later using these paths
+# pnpm requires global-bin-dir to exist and be on PATH
+ENV PNPM_HOME="/root/.local/share/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+
+RUN npm install -g pnpm && \
+  pnpm config set store-dir /pnpm_store && \
+  pnpm config set package-import-method copy
 
 #
 # Pulumi (can be copied from /usr/local/bin/pulumi/)
 #
-FROM build AS pulumi
+FROM base AS pulumi
 
-ARG PULUMI_VERSION="v3.124.0"
+# https://github.com/pulumi/pulumi/releases
+ARG PULUMI_VERSION="v3.221.0"
 ARG TARGETPLATFORM
 RUN case "$TARGETPLATFORM" in \
       "linux/amd64") \
@@ -28,40 +47,38 @@ RUN case "$TARGETPLATFORM" in \
 #
 
 # Compile Typescript code in dedicated image to avoid dev dependencies in final image
-FROM build AS tsc
+FROM base AS tsc
 
 WORKDIR /build
 
-COPY package.json       package.json
-COPY package-lock.json  package-lock.json
-RUN npm install
+COPY package.json    package.json
+COPY pnpm-lock.yaml  pnpm-lock.yaml
+RUN --mount=type=cache,id=pnmcache,target=/pnpm_store \
+  pnpm install --prefer-offline --frozen-lockfile
 
 # ansible required for build as packaged with node code
 COPY ansible ansible
 COPY src src
 COPY LICENSE.txt tsconfig.json tsconfig.build.json . 
 
-RUN npm run build
+# Optional: override package.json version for custom builds
+ARG CLOUDYPAD_VERSION
+RUN if [ -n "$CLOUDYPAD_VERSION" ]; then \
+      sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$CLOUDYPAD_VERSION\"/" package.json; \
+    fi
+
+RUN NODE_OPTIONS="--max-old-space-size=4896" pnpm run build
 
 # 
 # Final Cloudypad image
 #
-FROM node:${NODE_VERSION}
-
-# Global tooling
-RUN apt update && apt install -y \
-    python3-pip \
-    curl \
-    ssh \
-    sshpass \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+FROM base AS final
 
 # Ansible via pip to use fixed version for better reproducibility
 # Can't use pipx yet for global install as major distrib have an older version (1.1.0) 
 # which does not support pipx ensurepath --global
 # Python warns about break-system-packages but should be fine
-RUN pip3 install ansible==11.2.0 --break-system-packages
+RUN pip3 install ansible==13.3.0 --break-system-packages
 
 # Required for Azure DefaultAzureCredential
 RUN curl -sL https://aka.ms/InstallAzureCLIDeb -o install.sh && chmod +x install.sh && ./install.sh -y
@@ -77,21 +94,37 @@ WORKDIR /cloudypad
 # Install globally under /etc/ansible
 COPY ansible/requirements.yml ansible/requirements.yml
 RUN ansible-galaxy role install -r ansible/requirements.yml -p /usr/share/ansible/roles
-RUN ansible-galaxy collection install -r ansible/requirements.yml -p /usr/share/ansible/collections
+
+# For git install to workaround temporary workaround for Ansible galaxy
+# Ansible Galaxy has been down for more than 24h: https://github.com/ansible/galaxy/issues/3585
+# returning HTTP 500 errors. Let's use Git in the meantime
+RUN apt install git -y && \
+  ansible-galaxy collection install -r ansible/requirements.yml -p /usr/share/ansible/collections
 
 # Shorter Ansible logs output
 ENV ANSIBLE_STDOUT_CALLBACK=community.general.unixy
 
 # Deps
 ENV NODE_ENV=production
-COPY package.json       package.json
-COPY package-lock.json  package-lock.json
-RUN npm ci --omit dev
+COPY package.json    package.json
+COPY pnpm-lock.yaml  pnpm-lock.yaml
+RUN --mount=type=cache,id=pnmcache,target=/pnpm_store \
+  pnpm install --prefer-offline --frozen-lockfile --prod
 
 # Copy built app directly
 COPY --from=tsc /build/dist dist/
 COPY LICENSE.txt .
 
-RUN npm install --global dist/
+# Global install of built app
+RUN --mount=type=cache,id=pnmcache,target=/pnpm_store \
+  pnpm config set store-dir /pnpm_store && \
+  pnpm config set package-import-method copy && \
+  pnpm install --global /cloudypad/dist
+
+# Optional: override package.json version for custom builds
+ARG CLOUDYPAD_VERSION
+RUN if [ -n "$CLOUDYPAD_VERSION" ]; then \
+      sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$CLOUDYPAD_VERSION\"/" package.json; \
+    fi
 
 ENTRYPOINT  ["cloudypad"]

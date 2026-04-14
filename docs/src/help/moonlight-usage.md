@@ -31,7 +31,7 @@ To set Moonlight display resolution:
 
 Known limitations:
 
-- NVIDIA Datacenter GPUs maximum resolution is 2560x1600. Resolution will automatically be adjusted to fit your screen but may be smaller as it will be capped at 2560x1600. See [#144](https://github.com/ap0ught/cloudypad/issues/144).
+- NVIDIA Datacenter GPUs maximum resolution is 2560x1600. Resolution will automatically be adjusted to fit your screen but may be smaller as it will be capped at 2560x1600. See [#144](https://github.com/PierreBeucher/cloudypad/issues/144).
 
 ## Latency, stutter and image quality: FPS and bitrate
 
@@ -66,4 +66,4 @@ MacOS keyboard:
 ## See also
 
 - [Moonlight: install and connect](./moonlight-install-connect.md)
-- [Official Moonlight troubleshooting]([./moonlight-troubleshooting.md](https://github.com/moonlight-stream/moonlight-docs/wiki/Troubleshooting))
+- [Official Moonlight troubleshooting](https://github.com/moonlight-stream/moonlight-docs/wiki/Troubleshooting)

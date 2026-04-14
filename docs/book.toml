@@ -1,11 +1,10 @@
 [book]
 authors = ["Pierre Beucher"]
 language = "en"
-multilingual = false
 src = "src"
 title = "Cloudy Pad 🎮 🌥️"
 description = "Cloudy Pad: deploy your own gaming gear in the Cloud !"
 
 [output.html]
-git-repository-url = "https://github.com/ap0ught/cloudypad"
-edit-url-template = "https://github.com/ap0ught/cloudypad/edit/master/docs/{path}"
+git-repository-url = "https://github.com/PierreBeucher/cloudypad"
+edit-url-template = "https://github.com/PierreBeucher/cloudypad/edit/master/docs/{path}"

@@ -52,6 +52,7 @@ export class InteractiveInstanceUpdater<ST extends InstanceStateV1, A extends Up
         })
 
         const manager = await this.providerClient.getInstanceManager(instanceName)
+        
         await manager.deploy()
     }
 

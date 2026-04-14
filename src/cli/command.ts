@@ -2,44 +2,68 @@ import { Command, Option } from "@commander-js/extra-typings";
 import { PUBLIC_IP_TYPE, PUBLIC_IP_TYPE_DYNAMIC, PUBLIC_IP_TYPE_STATIC } from "../core/const";
 import { AnalyticsManager } from "../tools/analytics/manager";
 import { CoreConfig } from "../core/config/interface";
+import { z } from "zod";
 
 //
 // Common CLI Option each providers can re-use
 //
 
 /**
- * Arguments any Provider can take as parameter for create command
+ * Base Zod schema for generic CLI arguments
+ * This schema matches what Commander.js produces from CLI flags (e.g., --base-image-snapshot becomes baseImageSnapshot).
  */
-export interface CreateCliArgs {
-    name?: string
-    sshPrivateKey?: string
-    yes?: boolean // auto approve
-    overwriteExisting?: boolean
-    skipPairing?: boolean
-    streamingServer?: string
-    sunshineUser?: string
-    sunshinePassword?: string
-    sunshineImageTag?: string
-    sunshineImageRegistry?: string
-    autostop?: boolean
-    autostopTimeout?: number
-    useLocale?: string | null
-    keyboardLayout?: string
-    keyboardModel?: string
-    keyboardVariant?: string
-    keyboardOptions?: string
-    ansibleAdditionalArgs?: string
-    retries?: number
-    retryDelay?: number
-}
+export const CreateCliArgsSchema = z.object({
+    name: z.string().optional(),
+    sshPrivateKey: z.string().optional(),
+    yes: z.boolean().optional(),
+    overwriteExisting: z.boolean().optional(),
+    skipPairing: z.boolean().optional(),
+    streamingServer: z.string().optional(),
+    sunshineUser: z.string().optional(),
+    sunshinePassword: z.string().optional(),
+    sunshineImageTag: z.string().optional(),
+    sunshineImageRegistry: z.string().optional(),
+    sunshineMaxBitrateKbps: z.number().optional(),
+    autostop: z.boolean().optional(),
+    autostopTimeout: z.number().optional(),
+    useLocale: z.string().nullable().optional(),
+    keyboardLayout: z.string().optional(),
+    keyboardModel: z.string().optional(),
+    keyboardVariant: z.string().optional(),
+    keyboardOptions: z.string().optional(),
+    ansibleAdditionalArgs: z.string().optional(),
+    ansibleArgsOverride: z.string().optional(),
+    retries: z.number().optional(),
+    retryDelay: z.number().optional(),
+    ratelimitMaxMbps: z.number().optional(),
+})
 
 /**
- * Arguments any Provider can take as parameter for update command. Omit config that cannot/shouldn't be updated
- * - sshCrivateKey: updating would recreated the instance entirely. Since root volume is used to persist data, it would be lost. 
+ * Arguments any Provider can take as parameter for create command
+ * Type is inferred from Zod schema to ensure consistency
+ */
+export type CreateCliArgs = z.infer<typeof CreateCliArgsSchema>
+
+/**
+ * Base Zod schema for update CLI arguments.
+ * Omit config that cannot/shouldn't be updated:
+ * - sshPrivateKey: updating would recreate the instance entirely. Since root volume is used to persist data, it would be lost. 
  *  May be supported once we persist data in a dedicated volume.
  * - streamingServer: too complex to handle as it would leave behind existing streaming server data and config. Maybe possible in the future.
+ * - name: required for update command
  */
-export type UpdateCliArgs = Omit<CreateCliArgs, | "sshPrivateKey" | "streamingServer" > & { name: string }
+export const UpdateCliArgsSchema = CreateCliArgsSchema.omit({ 
+    sshPrivateKey: true, 
+    streamingServer: true })
+.extend({
+    name: z.string()
+})
+
+/**
+ * Arguments any Provider can take as parameter for update command.
+ * Type is inferred from Zod schema to ensure consistency
+ */
+export type UpdateCliArgs = z.infer<typeof UpdateCliArgsSchema>
 
 export const CLI_OPTION_INSTANCE_NAME = new Option('--name <name>', 'Instance name')
 
@@ -85,16 +109,15 @@ export const CLI_OPTION_COST_LIMIT = new Option('--cost-limit <limit>', 'Cost al
 })
 export const CLI_OPTION_COST_NOTIFICATION_EMAIL = new Option('--cost-notification-email <email>', 'Cost alert notification email. Imply --cost-alert.')
 
-export const CLI_OPTION_DELETE_INSTANCE_SERVER_ON_STOP = new Option('--delete-instance-server-on-stop [enable|yes|true|1]', 
-    'Whether to delete instance server on stop. ' +
-    'If enabled, instance server will be destroyed on stop and recreated on next start (along with provisioning and configuration).')
-    .argParser(parseFalseOrDisable)
 
 export const CLI_OPTION_STREAMING_SERVER = new Option('--streaming-server <name>', 'Streaming server to use. Either "sunshine" or "wolf"')
 export const CLI_OPTION_SUNSHINE_USERNAME = new Option('--sunshine-user <name>', 'Sunshine username (ignored if streaming server is not sunshine)')
 export const CLI_OPTION_SUNSHINE_PASSWORD = new Option('--sunshine-password <password>', 'Sunshine password (ignored if streaming server is not sunshine)')
 export const CLI_OPTION_SUNSHINE_IMAGE_TAG = new Option('--sunshine-image-tag <tag>', 'Sunshine container image tag (ignored if streaming server is not sunshine)')
 export const CLI_OPTION_SUNSHINE_IMAGE_REGISTRY = new Option('--sunshine-image-registry <registry>', 'Sunshine container image registry (ignored if streaming server is not sunshine)')
+export const CLI_OPTION_SUNSHINE_MAX_BITRATE_KBPS = new Option('--sunshine-max-bitrate-kbps <kbps>', 'Sunshine maximum bitrate in Kbps. If set, Sunshine server max bitrate will not exceed this bitrate regardless of client settings. ' +
+    '(ignored if streaming server is not sunshine)')
+    .argParser(parseInt)
 
 export const CLI_OPTION_AUTO_STOP_ENABLE = new Option('--autostop [disable|no|false|0]', 'Enable Auto Stop to shutdown the instance automatically when inactivity is detected')
     .argParser(parseFalseOrDisable)
@@ -103,11 +126,41 @@ export const CLI_OPTION_AUTO_STOP_TIMEOUT = new Option('--autostop-timeout <seco
 
 export const CLI_OPTION_ANSIBLE_ADDITIONAL_ARGS = new Option('--ansible-additional-args <args>', 'Additional Ansible arguments to pass to configuration, eg. "--tags data-disk -vvv"')
 
+export const CLI_OPTION_ANSIBLE_ARGS_OVERRIDE = new Option('--ansible-args-override <args>', 'Override Ansible arguments to pass to configuration, eg. "--tags data-disk -vvv"')
+
 export const CLI_OPTION_RETRIES = new Option('--retries <number>', 'Number of retries when deploying, configuring, starting, stopping or destroying instance')
     .argParser(parseInt)
 export const CLI_OPTION_RETRY_DELAY = new Option('--retry-delay <seconds>', 'Retry delay in seconds when deploying, configuring, starting, stopping or destroying instance')
     .argParser(parseInt)
 
+export const CLI_OPTION_RATE_LIMIT_MAX_MBPS = new Option('--ratelimit-max-mbps <mbps>', 'Rate limit egress bandwidth in Mbps. Can be used to limit egress cost. 0 to disable rate limiting.')
+    .argParser(parseInt)
+
+export const CLI_OPTION_FORCE_PULUMI_CANCEL = new Option('--force-pulumi-cancel', 'Cancel any stuck Pulumi operations before running the command. Only used for providers relying on Pulumi for infrastructure management, ignored otherwise.')
+
+export const CLI_OPTION_DELETE_INSTANCE_SERVER_ON_STOP = new Option('--delete-instance-server-on-stop [disable|no|false|0]', 
+    'Whether to delete instance server on stop. ' +
+    'If enabled, instance server will be destroyed on stop and recreated on next start (along with provisioning and configuration).')
+    .default(true)
+    .argParser(parseFalseOrDisable)
+
+export const CLI_OPTION_DATA_DISK_SNAPSHOT_ENABLE = new Option('--data-disk-snapshot [disable|no|false|0]', 
+    'Whether to enable data disk snapshot on stop for cost reduction (snapshot is cheaper than keeping a live data disk). ' +
+    'If enabled, data disk will be snapshotted on stop and restored from snapshot on next start.')
+    .default(true)
+    .argParser(parseFalseOrDisable)
+
+export const CLI_OPTION_BASE_IMAGE_SNAPSHOT_ENABLE = new Option('--base-image-snapshot [disable|no|false|0]', 
+    'Whether to enable base image snapshot after initial deploy. ' +
+    'If enabled, an image will be created after configuration capturing the configured system (NVIDIA drivers, Cloudy Pad, etc.). ')
+    .default(true)
+    .argParser(parseFalseOrDisable)
+
+export const CLI_OPTION_KEEP_BASE_IMAGE_ON_DELETION = new Option('--base-image-keep-on-deletion [disable|no|false|0]', 
+    'Whether to keep base image on instance deletion. ' +
+    'If enabled, base image will be preserved when instance is destroyed. ' +
+    'Only applies when base-image-snapshot-enable is also enabled. ')
+    .argParser(parseFalseOrDisable)
 
 function parseFalseOrDisable(value: string){
     return value === "disable" || value === "no" || value === "false" || value === "0" ? false : true
@@ -141,8 +194,10 @@ export abstract class CliCommandGenerator {
             .addOption(CLI_OPTION_OVERWRITE_EXISTING)
             .addOption(CLI_OPTION_SKIP_PAIRING)
             .addOption(CLI_OPTION_ANSIBLE_ADDITIONAL_ARGS)
+            .addOption(CLI_OPTION_ANSIBLE_ARGS_OVERRIDE)
             .addOption(CLI_OPTION_RETRIES)
             .addOption(CLI_OPTION_RETRY_DELAY)
+            .addOption(CLI_OPTION_FORCE_PULUMI_CANCEL)
     }
 
     /**
@@ -156,6 +211,7 @@ export abstract class CliCommandGenerator {
             .addOption(CLI_OPTION_ANSIBLE_ADDITIONAL_ARGS)
             .addOption(CLI_OPTION_RETRIES)
             .addOption(CLI_OPTION_RETRY_DELAY)
+            .addOption(CLI_OPTION_FORCE_PULUMI_CANCEL)
     }
 
     /**

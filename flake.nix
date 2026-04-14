@@ -1,14 +1,15 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    novops.url = "github:PierreBeucher/novops";
   };
 
-  outputs = { self, nixpkgs, flake-utils }: 
+  outputs = { self, nixpkgs, flake-utils, novops }: 
     flake-utils.lib.eachDefaultSystem (system:
       let  
         pkgs = import nixpkgs { system = system; config.allowUnfree = true; };
-        cloudypadVersion = "0.36.0";
+        cloudypadVersion = "0.44.0";
       in {
         packages = rec {
           default = cloudypad;
@@ -17,8 +18,8 @@
             version = cloudypadVersion;
 
             src = pkgs.fetchurl {
-              url = "https://raw.githubusercontent.com/ap0ught/cloudypad/v${cloudypadVersion}/cloudypad.sh";
-              hash = "sha256:1l400pwiaw721s0zscanvwiypxj90i01sp42s2bp1yhg3226l5rj";
+              url = "https://raw.githubusercontent.com/PierreBeucher/cloudypad/v${cloudypadVersion}/cloudypad.sh";
+              hash = "sha256:0q7mk5b7bq65fm31j4mlji0dw57sb29b1n69qgzzjsjyl2c1h36i";
             };
 
             phases = [ "installPhase" ];
@@ -29,48 +30,65 @@
 
             meta = with pkgs.lib; {
               description = "Cloudypad script";
-              homepage = "https://github.com/ap0ught/cloudypad";
+              homepage = "https://github.com/PierreBeucher/cloudypad";
               license = licenses.agpl3Plus;
             };
           };
-          
+          novops = novops.packages.${system}.novops;
         };
         devShells = {
           default = pkgs.mkShell {
-            packages = with pkgs; [
-              gnumake
-              pulumi-bin
-              pulumiPackages.pulumi-language-nodejs
-              nodejs_22
-              go-task
-              gettext
-              typescript
-              podman
-              podman-compose
-              ansible
-              sshpass # for Ansible password auth
-              yq
-              jq
-              gh
-              mdbook
-              pv # for demo-magic
-              asciinema
-              imagemagick_light
-              ffmpeg
-              vagrant
-              scaleway-cli
-              bc
-
-              google-cloud-sdk
+            packages = [
+              (with pkgs; [
+                gnumake
+                pulumi-bin
+                pulumiPackages.pulumi-nodejs
+                nodejs_22
+                go-task
+                gettext
+                typescript
+                podman
+                podman-compose
+                ansible
+                sshpass # for Ansible password auth
+                yq
+                jq
+                gh
+                mdbook
+                pv # for demo-magic
+                asciinema
+                imagemagick_light
+                ffmpeg
+                vagrant
+                scaleway-cli
+                bc
+                linode-cli
+                google-cloud-sdk
+                pnpm
+              ])
+              novops.packages.${system}.novops
             ];
             
             shellHook = ''
-              export PULUMI_BACKEND_URL="file://$HOME/.cloudypad/pulumi-backend"
+              # Set Pulumi backend and Cloudy Pad to integration test
+              export PULUMI_BACKEND_URL="file://$PWD/test/integ/.data-root-dir/pulumi"
               export PULUMI_CONFIG_PASSPHRASE=""
 
-              export PAPERSPACE_API_KEY=$(cat $PWD/tmp/paperspace_api_key)
+              export CLOUDYPAD_HOME="$PWD/test/integ/.data-root-dir"
 
               export CLOUDYPAD_KEYBOARD_LAYOUT_AUTODETECT_SKIP_WAYLAND_WARNING=true
+
+              # Force NODE_ENV as Cursor seems to set it to production
+              # See https://forum.cursor.com/t/agent-shell-set-node-env-to-production/134489
+              export NODE_ENV=development
+
+              # Force max old space size to 8GB for Node.js as compilation is very memory intensive
+              export NODE_OPTIONS="--max-old-space-size=8912"
+              
+              # Debug alias
+              alias cloudypad="npx tsx src/cli/main.ts"
+
+              source <(novops load -e dev)
             '';
           };
         };

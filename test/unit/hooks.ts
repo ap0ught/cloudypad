@@ -2,14 +2,14 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import sinon from 'sinon';
 import path from 'path';
-import { AwsPulumiClient } from '../../src/providers/aws/pulumi';
+import { AwsPulumiClient } from '../../src/providers/aws/pulumi/main';
 import { AnsibleClient } from '../../src/tools/ansible';
 import { InstancePulumiClient } from '../../src/tools/pulumi/client';
 import { AbstractInstanceRunner } from '../../src/core/runner';
 import { AbstractInstanceProvisioner } from '../../src/core/provisioner';
-import { AzurePulumiClient } from '../../src/providers/azure/pulumi';
-import { GcpPulumiClient } from '../../src/providers/gcp/pulumi';
-import { ScalewayPulumiClient } from '../../src/providers/scaleway/pulumi';
+import { AzurePulumiClient } from '../../src/providers/azure/pulumi/main';
+import { GcpPulumiClient } from '../../src/providers/gcp/pulumi/main';
+import { ScalewayPulumiClient } from '../../src/providers/scaleway/pulumi/main';
 import { PaperspaceClient, PaperspaceMachine } from '../../src/providers/paperspace/client/client';
 import { DUMMY_AWS_PULUMI_OUTPUT, DUMMY_AZURE_PULUMI_OUTPUT, DUMMY_GCP_PULUMI_OUTPUT, DUMMY_PAPERSPACE_MACHINE, DUMMY_SCALEWAY_PULUMI_OUTPUT, DUMMY_SSH_KEY_PATH } from './utils';
 import { AnalyticsManager } from '../../src/tools/analytics/manager';
@@ -18,7 +18,7 @@ import { ScalewayClient } from '../../src/providers/scaleway/sdk-client';
 import { CliConfigManager } from '../../src/cli/config';
 import { ConfigLoader } from '../../src/core/config/default';
 import { SshKeyLoader } from '../../src/tools/ssh';
-import { Retrier } from '../../src/tools/retrier';
+import { ActionRetrier } from '../../src/tools/retrier';
 
 
 export const mochaHooks = {
@@ -33,7 +33,7 @@ export const mochaHooks = {
         sinon.stub(AbstractInstanceRunner.prototype, 'pairInteractive').resolves()
 
         // force default retry log behavior to debug for unit tests
-        sinon.stub(Retrier, 'getDefaultRetryLogBehavior').callsFake(() => {
+        sinon.stub(ActionRetrier, 'getDefaultRetryLogBehavior').callsFake(() => {
             return "debug"
         })
 

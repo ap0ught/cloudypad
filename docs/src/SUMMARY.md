@@ -3,6 +3,7 @@
 [Introduction](README.md)
 [Getting started 🚀](getting-started.md)
 [What is Cloud Gaming ?](what-is-cloud-gaming.md)
+[Features](features.md)
 [Roadmap](roadmap.md)
 
 # CLI Usage
@@ -38,6 +39,7 @@
 - [Moonlight: install and connect/pair](./help/moonlight-install-connect.md)
 - [Moonlight usage: screen size, latency, keyboard shortcuts, etc.](./help/moonlight-usage.md)
 - [Keyboard and Mouse configuration](./help/keyboard-mouse-config.md)
+- [Performance and setup tips](./help/performance.md)
 - [Running sudo and root commands](./help/sudo.md)
 - [Talk to a human](./help/community.md)
 - [General FAQ](./help/faq.md)
@@ -55,7 +57,7 @@
 
 # Contributing
 
-- [Development guide](./contributing/development-guide.md)
-- [Build System Overview](./contributing/build-system.md)
+- [Contribution guide](./contributing/contribution-guide.md)
+- [Architecture overview](./contributing/architecture.md)
 - [Extend Docker images](./contributing/container-image.md)
 - [License](./contributing/license.md)

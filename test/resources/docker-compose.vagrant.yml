@@ -1,13 +1,14 @@
 # Debug in Vagrant VM Compose file. 
 # Run from Vagrant VM with:
 #
+#   vagrant ssh
 #   docker compose -f /vagrant/test/resources/docker-compose.vagrant.yml -p sunshine up -d --force-recreate
 #
 # To update, run Ansible configuration on VM and copy resulting compose file here.
 #
 services:
   cloudy:
-    image: ghcr.io/ap0ught/cloudypad/sunshine:local
+    image: ghcr.io/pierrebeucher/cloudypad/sunshine:local
     # This container name is used by various scripts and functions to identify the container
     # Don't change it
     container_name: cloudy
@@ -40,13 +41,21 @@ services:
     # persisting this folder makes sense to keep user's data across container recreation
     - "/var/lib/cloudypad/sunshine/home:/home/cloudy"
     
+    #
     # Local overlay debug
-    - "/vagrant/containers/sunshine/overlay/cloudy/bin:/cloudy/bin"
-    - "/vagrant/containers/sunshine/overlay/cloudy/conf/cloudypad:/cloudy/conf/cloudypad"
-    # - "/vagrant/containers/sunshine/overlay/cloudy/conf/heroic-default:/cloudy/conf/heroic-default"
+    #
+
+    # - "/vagrant/containers/sunshine/overlay/cloudy/bin:/cloudy/bin"
+    # - "/vagrant/containers/sunshine/overlay/cloudy/conf/cloudypad:/cloudy/conf/cloudypad"
+    
     # - "/vagrant/containers/sunshine/overlay/cloudy/conf/xfce4-default:/cloudy/conf/xfce4-default"
+    
+    # - "/vagrant/containers/sunshine/overlay/cloudy/conf/heroic-default:/cloudy/conf/heroic-default"
+
+    - "/vagrant/containers/sunshine/overlay/cloudy/conf/sunshine/sunshine.conf.template:/cloudy/conf/sunshine/sunshine.conf.template"
     # - "/vagrant/containers/sunshine/overlay/cloudy/conf/sunshine/apps.json:/cloudy/conf/sunshine/apps.json"
     # - "/vagrant/containers/sunshine/overlay/cloudy/conf/sunshine/assets:/cloudy/conf/sunshine/assets"
+    
     # - "/vagrant/containers/sunshine/overlay/cloudy/conf/supervisor:/cloudy/conf/supervisor"
     
     # Allow container to read/write/manage attributes on character device 13
@@ -78,9 +87,9 @@ services:
       # Desired locale
       CLOUDYPAD_LOCALE: fr_FR.UTF-8
 
-      # Sunshine Web UI password
+      # Sunshine Web UI password "sunshine"
       # If unset or empty, can be set via Web UI directly
-      SUNSHINE_WEB_PASSWORD_BASE64: "QCEvOiw/ISojJ+KCrGBfXMK1JD0iZm9v"
+      SUNSHINE_WEB_PASSWORD_BASE64: "c3Vuc2hpbmU="
       SUNSHINE_WEB_USERNAME: "sunshine"
       SUNSHINE_SERVER_NAME: >-
         dev-vagrant
@@ -90,3 +99,4 @@ services:
       # Use "\n" for multiple lines
       # eg. "capture = x11\nfoo = bar"
       CLOUDYPAD_SUNSHINE_ADDITIONAL_CONFIG: "capture = x11"
+      CLOUDYPAD_SUNSHINE_MAX_BITRATE: "20000"

@@ -113,6 +113,7 @@ export abstract class AbstractInputPrompter<
             passwordBase64: await this.promptSunshinePasswordBase64(partialInput.configuration?.sunshine?.passwordBase64),
             imageRegistry: partialInput.configuration?.sunshine?.imageRegistry,
             imageTag: partialInput.configuration?.sunshine?.imageTag,
+            maxBitrateKbps: partialInput.configuration?.sunshine?.maxBitrateKbps,
         } : null
 
         let wolfConfig = streamingServer.wolfEnabled ? {
@@ -132,6 +133,9 @@ export abstract class AbstractInputPrompter<
             configuration: {
                 sunshine: sunshineConfig,
                 wolf: wolfConfig,
+                ratelimit: partialInput.configuration?.ratelimit?.maxMbps ? {
+                    maxMbps: partialInput.configuration?.ratelimit?.maxMbps,
+                } : undefined,
                 autostop: {
                     enable: autoStop.autoStopEnable,
                     timeoutSeconds: autoStop.autoStopTimeout,
@@ -185,6 +189,9 @@ export abstract class AbstractInputPrompter<
                     enable: cliArgs.autostop,
                     timeoutSeconds: cliArgs.autostopTimeout,
                 } : undefined,
+                ratelimit: cliArgs.ratelimitMaxMbps ? {
+                    maxMbps: cliArgs.ratelimitMaxMbps,
+                } : undefined,
                 // only set streaming server if provided
                 // if undefined, no specific CLI args was passed, leave undefined
                 // to re-use existing state value or prompt user
@@ -194,6 +201,7 @@ export abstract class AbstractInputPrompter<
                     passwordBase64: cliArgs.sunshinePassword ? Buffer.from(cliArgs.sunshinePassword).toString('base64') : undefined,
                     imageRegistry: cliArgs.sunshineImageRegistry,
                     imageTag: cliArgs.sunshineImageTag,
+                    maxBitrateKbps: cliArgs.sunshineMaxBitrateKbps,
                 } : undefined,
                 wolf: cliArgs.streamingServer == STREAMING_SERVER_WOLF ? {
                     enable: true,
@@ -294,19 +302,8 @@ export abstract class AbstractInputPrompter<
             return publicIpType
         }
 
-        const publicIpTypeChoices: {name: PUBLIC_IP_TYPE, value: PUBLIC_IP_TYPE }[] = [{
-            name: PUBLIC_IP_TYPE_STATIC,
-            value: PUBLIC_IP_TYPE_STATIC
-        },{
-            name: PUBLIC_IP_TYPE_DYNAMIC,
-            value: PUBLIC_IP_TYPE_DYNAMIC
-        }]
-
-        return await select({
-            message: 'Use static Elastic IP or dynamic IP? :',
-            choices: publicIpTypeChoices,
-            default: PUBLIC_IP_TYPE_STATIC,
-        })
+        // Always return static IP type by default, dynamic IP is deprecated and will be removed in the future
+        return PUBLIC_IP_TYPE_STATIC
     }
 
     protected async informCloudProviderQuotaWarning(provider: string, helpUrl: string){

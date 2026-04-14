@@ -2,16 +2,16 @@ import { CommonInstanceInput, InstanceStateV1 } from "../../src/core/state/state
 import path from "path"
 import fs, { mkdtempSync } from "fs"
 import yaml from 'yaml'
-import { AwsPulumiOutput } from "../../src/providers/aws/pulumi";
-import { AzurePulumiOutput } from "../../src/providers/azure/pulumi";
-import { GcpPulumiOutput } from "../../src/providers/gcp/pulumi";
+import { AwsPulumiOutput } from "../../src/providers/aws/pulumi/main";
+import { AzurePulumiOutput } from "../../src/providers/azure/pulumi/main";
+import { GcpPulumiOutput } from "../../src/providers/gcp/pulumi/main";
 import { PaperspaceMachine } from "../../src/providers/paperspace/client/client";
 import { PUBLIC_IP_TYPE_STATIC } from "../../src/core/const";
 import { tmpdir } from "os";
 import { AnonymousStateParser } from "../../src/core/state/parser";
 import { STREAMING_SERVER_SUNSHINE } from '../../src/cli/prompter';
 import { CreateCliArgs } from "../../src/cli/command";
-import { ScalewayPulumiOutput } from "../../src/providers/scaleway/pulumi";
+import { ScalewayPulumiOutput } from "../../src/providers/scaleway/pulumi/main";
 import { CloudypadClient } from "../../src";
 import { AwsInstanceStateV1 } from "../../src/providers/aws/state";
 import { PartialDeep } from "type-fest";
@@ -34,12 +34,16 @@ export const DEFAULT_COMMON_INPUT: CommonInstanceInput = {
         }
     },
     configuration: {
+        ratelimit: {
+            maxMbps: 50,
+        },
         sunshine: {
             enable: true,
             username: "sunshine",
             passwordBase64: "c3Vuc2hpbmVQYXNzd29yZA==", // 'sunshinePassword' in base64,
             imageTag: "local",
             imageRegistry: "dummy.registry.example.co",
+            maxBitrateKbps: 5000,
         },
         wolf: undefined,
         autostop: {
@@ -78,6 +82,8 @@ export const DEFAULT_COMMON_CLI_ARGS: CreateCliArgs = {
     keyboardModel: DEFAULT_COMMON_INPUT.configuration.keyboard?.model,
     keyboardOptions: DEFAULT_COMMON_INPUT.configuration.keyboard?.options,
     ansibleAdditionalArgs: DEFAULT_COMMON_INPUT.configuration.ansible?.additionalArgs,
+    ratelimitMaxMbps: DEFAULT_COMMON_INPUT.configuration.ratelimit?.maxMbps,
+    sunshineMaxBitrateKbps: DEFAULT_COMMON_INPUT.configuration.sunshine?.maxBitrateKbps,
 }
 
 export const DUMMY_SSH_KEY_PATH = path.resolve(__dirname, '..', 'resources', 'ssh-key')
@@ -216,8 +222,11 @@ export function createDummyState(override?: PartialDeep<DummyInstanceStateV1>): 
             input: {
                 ...DEFAULT_COMMON_INPUT.provision,
                 instanceType: "t2.micro",
-                startDelaySeconds: 5,
-                stopDelaySeconds: 5,
+                startDelaySeconds: 0,
+                stopDelaySeconds: 0,
+                configurationDelaySeconds: 0,
+                provisioningDelaySeconds: 0,
+                readinessAfterStartDelaySeconds: 0,
             }
         },
         name: `dummy-instance-${Date.now()}`,
@@ -232,9 +241,10 @@ export function createDummyState(override?: PartialDeep<DummyInstanceStateV1>): 
     return lodash.merge(dummyState, override);
 }
 
-export async function initializeDummyInstanceState(instanceName: string): Promise<DummyInstanceStateV1> {
+export async function initializeDummyInstanceState(instanceName: string, override?: PartialDeep<DummyInstanceStateV1>): Promise<DummyInstanceStateV1> {
     const dummyState = createDummyState({
         name: instanceName,
+        ...override
     })
     const dummyClient = getUnitTestDummyProviderClient()
     const initializer = dummyClient.getInstanceInitializer()

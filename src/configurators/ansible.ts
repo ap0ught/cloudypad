@@ -23,13 +23,11 @@ export interface AnsibleConfiguratorArgs<ST extends InstanceStateV1> {
 
 export class AnsibleConfigurator<ST extends InstanceStateV1> extends AbstractInstanceConfigurator<ST> {
 
-    protected readonly logger: Logger
     protected readonly args: AnsibleConfiguratorArgs<ST>
 
     constructor(args: AnsibleConfiguratorArgs<ST>){
         super()
         this.args = args
-        this.logger = getLogger(args.instanceName)
     }
 
     async doConfigure(): Promise<NonNullable<ST["configuration"]["output"]>> {
@@ -100,7 +98,9 @@ export class AnsibleConfigurator<ST extends InstanceStateV1> extends AbstractIns
             all: {
                 hosts: {
                     [this.args.instanceName]: {
-                        ansible_host: this.args.provisionOutput.host,
+                        // prefer using IPv4 directly as host maybe a DNS record which is not propagated yet
+                        // fallback to hostname if IPv4 is not available
+                        ansible_host: this.args.provisionOutput.publicIPv4 ?? this.args.provisionOutput.host,
                         ansible_user: this.args.provisionInput.ssh.user,
                         ansible_ssh_private_key_file: sshAuth.privateKeyPath,
                         ansible_password: sshAuth.password,
@@ -117,6 +117,9 @@ export class AnsibleConfigurator<ST extends InstanceStateV1> extends AbstractIns
                         sunshine_nvidia_enable: true,
                         sunshine_image_tag: this.args.configurationInput.sunshine?.imageTag ?? CLOUDYPAD_VERSION,
                         sunshine_image_registry: this.args.configurationInput.sunshine?.imageRegistry ?? CLOUDYPAD_SUNSHINE_IMAGE_REGISTRY,
+                        sunshine_max_bitrate_kbps: this.args.configurationInput.sunshine?.maxBitrateKbps,
+
+                        sunshine_autoheal_enable: this.args.configurationInput.sunshine?.autoheal?.enable,
 
                         sunshine_keyboard_layout: this.args.configurationInput.keyboard?.layout,
                         sunshine_keyboard_variant: this.args.configurationInput.keyboard?.variant,
@@ -124,12 +127,19 @@ export class AnsibleConfigurator<ST extends InstanceStateV1> extends AbstractIns
                         sunshine_keyboard_options: this.args.configurationInput.keyboard?.options,
 
                         sunshine_locale: this.args.configurationInput.locale,
+
                         
+
                         autostop_enable: this.args.configurationInput.autostop?.enable,
                         autostop_timeout_seconds: this.args.configurationInput.autostop?.timeoutSeconds,
 
                         cloudypad_data_disk_enabled: this.args.provisionOutput.dataDiskId !== undefined,
-                        cloudypad_data_disk_id: this.args.provisionOutput.dataDiskId,
+                        cloudypad_data_disk_id: this.args.provisionOutput.machineDataDiskLookupId,
+                        cloudypad_data_disk_lookup_method: this.args.provisionOutput.machineDataDiskMountMethod,
+
+                        ratelimit_enable: this.args.configurationInput.ratelimit?.maxMbps !== undefined && 
+                            this.args.configurationInput.ratelimit.maxMbps > 0,
+                        ratelimit_max_mbps: this.args.configurationInput.ratelimit?.maxMbps,
                     },
                 },
             },

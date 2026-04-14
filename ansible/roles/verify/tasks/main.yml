@@ -1,0 +1,18 @@
+- import_tasks: nvidia.yml
+  tags: [nvidia]
+
+# Always verify data disk is mounted and accessible
+# since all tested providers are tested with a data disk
+- import_tasks: data-disk.yml
+  tags: [data-disk]
+
+- import_tasks: autostop.yml
+  tags: [autostop]
+
+- import_tasks: sunshine.yml
+  tags: [sunshine]
+
+- import_tasks: rate-limit.yml
+  tags: [rate-limit]
+  when: ratelimit_enable | default(false) | bool
+

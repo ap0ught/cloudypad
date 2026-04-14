@@ -7,6 +7,7 @@ export const CLOUDYPAD_PROVIDER_GCP = "gcp"
 export const CLOUDYPAD_PROVIDER_DUMMY = "dummy"
 export const CLOUDYPAD_PROVIDER_SCALEWAY = "scaleway"
 export const CLOUDYPAD_PROVIDER_SSH = "ssh"
+export const CLOUDYPAD_PROVIDER_LINODE = "linode"
 
 export type CLOUDYPAD_PROVIDER = 
     typeof CLOUDYPAD_PROVIDER_AWS | 
@@ -15,7 +16,8 @@ export type CLOUDYPAD_PROVIDER =
     typeof CLOUDYPAD_PROVIDER_GCP | 
     typeof CLOUDYPAD_PROVIDER_DUMMY |
     typeof CLOUDYPAD_PROVIDER_SCALEWAY |
-    typeof CLOUDYPAD_PROVIDER_SSH
+    typeof CLOUDYPAD_PROVIDER_SSH |
+    typeof CLOUDYPAD_PROVIDER_LINODE
 
 export const CLOUDYPAD_PROVIDER_LIST = [ 
     CLOUDYPAD_PROVIDER_AWS, 
@@ -24,7 +26,8 @@ export const CLOUDYPAD_PROVIDER_LIST = [
     CLOUDYPAD_PROVIDER_GCP, 
     CLOUDYPAD_PROVIDER_DUMMY,
     CLOUDYPAD_PROVIDER_SCALEWAY,
-    CLOUDYPAD_PROVIDER_SSH
+    CLOUDYPAD_PROVIDER_SSH,
+    CLOUDYPAD_PROVIDER_LINODE
 ] as const
 
 export const CLOUDYPAD_CONFIGURATOR_ANSIBLE = "ansible"
@@ -56,7 +59,7 @@ export const CLOUDYPAD_VERSION = version
 /**
  * Default registry for Sunshine container image
  */
-export const CLOUDYPAD_SUNSHINE_IMAGE_REGISTRY = "ghcr.io/ap0ught/cloudypad"
+export const CLOUDYPAD_SUNSHINE_IMAGE_REGISTRY = "ghcr.io/pierrebeucher/cloudypad"
 
 /**
  * Simple port definition (number and protocol)
@@ -119,3 +122,31 @@ export const CLOUDYPAD_SUNSHINE_PORTS: SimplePortDefinition[] = [
     { port: 48000, protocol: 'udp' }, // Audio
     { port: 48002, protocol: 'udp' }, // Mic (unused)
 ]
+
+/**
+ * Data disk state values for runtime provisioning control
+ * Live: data disk should exist, created from existing snapshot if possible.
+ */
+export const DATA_DISK_STATE_LIVE = "live" as const
+
+/**
+ * Data disk state values for runtime provisioning control
+ * Snapshot: a data disk snapshot should be created, the original data disk should be deleted after snapshot created.
+ */
+export const DATA_DISK_STATE_SNAPSHOT = "snapshot" as const
+
+/**
+ * Instance server state values for runtime provisioning control
+ * Present: instance server should exist
+ */
+export const INSTANCE_SERVER_STATE_PRESENT = "present" as const
+
+export type DATA_DISK_STATE = typeof DATA_DISK_STATE_LIVE | typeof DATA_DISK_STATE_SNAPSHOT
+
+/**
+ * Instance server state values for runtime provisioning control
+ * Absent: instance server should be deleted
+ */
+export const INSTANCE_SERVER_STATE_ABSENT = "absent" as const
+
+export type INSTANCE_SERVER_STATE = typeof INSTANCE_SERVER_STATE_PRESENT | typeof INSTANCE_SERVER_STATE_ABSENT

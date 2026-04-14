@@ -4,30 +4,66 @@ import { input, select, confirm } from '@inquirer/prompts';
 import { AwsClient, EC2_QUOTA_CODE_ALL_G_AND_VT_SPOT_INSTANCES, EC2_QUOTA_CODE_RUNNING_ON_DEMAND_G_AND_VT_INSTANCES, DEFAULT_REGION } from "./sdk-client";
 import { AbstractInputPrompter, AbstractInputPrompterArgs, costAlertCliArgsIntoConfig, PromptOptions } from "../../cli/prompter";
 import lodash from 'lodash'
-import { CLI_OPTION_COST_NOTIFICATION_EMAIL, CLI_OPTION_COST_ALERT, CLI_OPTION_COST_LIMIT, CLI_OPTION_DISK_SIZE, CLI_OPTION_PUBLIC_IP_TYPE, CLI_OPTION_SPOT, CliCommandGenerator, CreateCliArgs, UpdateCliArgs, CLI_OPTION_STREAMING_SERVER, CLI_OPTION_SUNSHINE_PASSWORD, CLI_OPTION_SUNSHINE_USERNAME, CLI_OPTION_SUNSHINE_IMAGE_REGISTRY, CLI_OPTION_SUNSHINE_IMAGE_TAG, CLI_OPTION_AUTO_STOP_TIMEOUT, CLI_OPTION_AUTO_STOP_ENABLE, CLI_OPTION_KEYBOARD_OPTIONS, CLI_OPTION_KEYBOARD_VARIANT, CLI_OPTION_KEYBOARD_MODEL, CLI_OPTION_KEYBOARD_LAYOUT, CLI_OPTION_USE_LOCALE, BuildCreateCommandArgs, BuildUpdateCommandArgs } from "../../cli/command";
-import { CLOUDYPAD_PROVIDER_AWS, PUBLIC_IP_TYPE } from "../../core/const";
+import { CreateCliArgsSchema, CLI_OPTION_COST_NOTIFICATION_EMAIL, CLI_OPTION_COST_ALERT, CLI_OPTION_COST_LIMIT, CLI_OPTION_DISK_SIZE, CLI_OPTION_SPOT, CliCommandGenerator, UpdateCliArgsSchema, CLI_OPTION_STREAMING_SERVER, CLI_OPTION_SUNSHINE_PASSWORD, CLI_OPTION_SUNSHINE_USERNAME, CLI_OPTION_SUNSHINE_IMAGE_REGISTRY, CLI_OPTION_SUNSHINE_IMAGE_TAG, CLI_OPTION_AUTO_STOP_TIMEOUT, CLI_OPTION_AUTO_STOP_ENABLE, CLI_OPTION_KEYBOARD_OPTIONS, CLI_OPTION_KEYBOARD_VARIANT, CLI_OPTION_KEYBOARD_MODEL, CLI_OPTION_KEYBOARD_LAYOUT, CLI_OPTION_USE_LOCALE, BuildCreateCommandArgs, BuildUpdateCommandArgs, CLI_OPTION_RATE_LIMIT_MAX_MBPS, CLI_OPTION_SUNSHINE_MAX_BITRATE_KBPS, CLI_OPTION_ROOT_DISK_SIZE, CLI_OPTION_DATA_DISK_SIZE, CLI_OPTION_DATA_DISK_SNAPSHOT_ENABLE, CLI_OPTION_BASE_IMAGE_SNAPSHOT_ENABLE, CLI_OPTION_KEEP_BASE_IMAGE_ON_DELETION, CLI_OPTION_DELETE_INSTANCE_SERVER_ON_STOP } from "../../cli/command";
+import { CLOUDYPAD_PROVIDER_AWS, PUBLIC_IP_TYPE_DYNAMIC, PUBLIC_IP_TYPE_STATIC } from "../../core/const";
 import { InteractiveInstanceInitializer } from "../../cli/initializer";
 import { PartialDeep } from "type-fest";
 import { RUN_COMMAND_CREATE, RUN_COMMAND_UPDATE } from "../../tools/analytics/events";
 import { InteractiveInstanceUpdater } from "../../cli/updater";
 import { cleanupAndExit, handleErrorAnalytics, logFullError } from "../../cli/program";
 import { AwsProviderClient } from "./provider";
-
-export interface AwsCreateCliArgs extends CreateCliArgs {
-    spot?: boolean
-    diskSize?: number
-    publicIpType?: PUBLIC_IP_TYPE
-    instanceType?: string
-    region?: string
-    costAlert?: boolean
-    costLimit?: number
-    costNotificationEmail?: string
-}
+import { z } from "zod";
 
 /**
- * Possible update arguments for AWS update. Region and spot cannot be updated as it would destroy existing machine and/or disk. 
+ * Zod schema for AWS-specific CLI arguments.
+ * Extends the generic CreateCliArgsSchema with AWS-specific options.
+ * This schema matches what Commander.js produces from CLI flags.
  */
-export type AwsUpdateCliArgs = UpdateCliArgs & Omit<AwsCreateCliArgs, "region" | "spot">
+export const AwsCreateCliArgsSchema = CreateCliArgsSchema.extend({
+    spot: z.boolean().optional(),
+    diskSize: z.number().optional(),
+    rootDiskSize: z.number().optional(),
+    dataDiskSize: z.number().optional(),
+    instanceType: z.string().optional(),
+    region: z.string().optional(),
+    zone: z.string().optional(),
+    costAlert: z.boolean().optional(),
+    costLimit: z.number().optional(),
+    costNotificationEmail: z.string().optional(),
+    imageId: z.string().optional(),
+    dedicatedVpc: z.boolean().optional(),
+    baseImageSnapshot: z.boolean().optional(),
+    baseImageKeepOnDeletion: z.boolean().optional(),
+    dataDiskSnapshot: z.boolean().optional(),
+    deleteInstanceServerOnStop: z.boolean().optional(),
+})
+
+/**
+ * AWS-specific CLI arguments for create command.
+ * Type is inferred from Zod schema to ensure consistency.
+ */
+export type AwsCreateCliArgs = z.infer<typeof AwsCreateCliArgsSchema>
+
+/**
+ * Zod schema for AWS-specific update CLI arguments.
+ */
+export const AwsUpdateCliArgsSchema = UpdateCliArgsSchema.extend({
+    diskSize: z.number().optional(),
+    rootDiskSize: z.number().optional(),
+    dataDiskSize: z.number().optional(),
+    instanceType: z.string().optional(),
+    costAlert: z.boolean().optional(),
+    costLimit: z.number().optional(),
+    costNotificationEmail: z.string().optional(),
+    imageId: z.string().optional(), 
+    baseImageKeepOnDeletion: z.boolean().optional(),
+})
+
+/**
+ * Possible update arguments for AWS update.
+ * Type is inferred from Zod schema to ensure consistency.
+ */
+export type AwsUpdateCliArgs = z.infer<typeof AwsUpdateCliArgsSchema>
 
 /**
  * Supported instance types for AWS. Other instance types may work but are not tested.
@@ -49,11 +85,21 @@ export class AwsInputPrompter extends AbstractInputPrompter<AwsCreateCliArgs, Aw
         return {
             provision: {
                 instanceType: cliArgs.instanceType,
-                diskSize: cliArgs.diskSize,
-                publicIpType: cliArgs.publicIpType,
+                diskSize: cliArgs.rootDiskSize ?? cliArgs.diskSize, // diskSize and rootDiskSize are aliases for the same thing
+                dataDiskSizeGb: cliArgs.dataDiskSize,
                 region: cliArgs.region,
+                zone: cliArgs.zone,
                 useSpot: cliArgs.spot,
-                costAlert: costAlertCliArgsIntoConfig(cliArgs)
+                dedicatedVpc: cliArgs.dedicatedVpc !== undefined ? { enabled: cliArgs.dedicatedVpc } : undefined,
+                costAlert: costAlertCliArgsIntoConfig(cliArgs),
+                deleteInstanceServerOnStop: cliArgs.deleteInstanceServerOnStop,
+                dataDiskSnapshot: cliArgs.dataDiskSnapshot ? { 
+                    enable: cliArgs.dataDiskSnapshot 
+                } : undefined,
+                baseImageSnapshot: cliArgs.baseImageSnapshot ? { 
+                    enable: cliArgs.baseImageSnapshot,
+                    keepOnDeletion: cliArgs.baseImageKeepOnDeletion
+                } : undefined
             }
         }
     }
@@ -64,10 +110,13 @@ export class AwsInputPrompter extends AbstractInputPrompter<AwsCreateCliArgs, Aw
             await this.informCloudProviderQuotaWarning(CLOUDYPAD_PROVIDER_AWS, "https://docs.cloudypad.gg/cloud-provider-setup/aws.html")
         }
 
+        const dedicatedVpcEnabled = await this.promptDedicatedVpc(partialInput.provision?.dedicatedVpc?.enabled)
         const region = await this.region(partialInput.provision?.region)
+        const zone = await this.zone(region, partialInput.provision?.zone)
         const useSpot = await this.useSpotInstance(partialInput.provision?.useSpot)
         const instanceType = await this.instanceType(region, useSpot, partialInput.provision?.instanceType)
-        const diskSize = await this.diskSize(partialInput.provision?.diskSize)
+        const rootDiskSize = await this.rootDiskSize(partialInput.provision?.diskSize)
+        const dataDiskSizeGb = await this.dataDiskSize(partialInput.provision?.dataDiskSizeGb)
         const publicIpType = await this.publicIpType(partialInput.provision?.publicIpType)
         const costAlert = await this.costAlert(partialInput.provision?.costAlert)
                 
@@ -76,17 +125,39 @@ export class AwsInputPrompter extends AbstractInputPrompter<AwsCreateCliArgs, Aw
             commonInput, 
             {
                 provision:{
-                    diskSize: diskSize,
+                    diskSize: rootDiskSize,
+                    dataDiskSizeGb: dataDiskSizeGb,
                     instanceType: instanceType,
                     publicIpType: publicIpType,
                     region: region,
+                    zone: zone,
                     useSpot: useSpot,
+                    dedicatedVpc: { enabled: dedicatedVpcEnabled },
                     costAlert: costAlert,
+                    deleteInstanceServerOnStop: partialInput.provision?.deleteInstanceServerOnStop,
+                    dataDiskSnapshot: partialInput.provision?.dataDiskSnapshot?.enable ? { 
+                        enable: partialInput.provision.dataDiskSnapshot.enable 
+                    } : undefined,
+                    baseImageSnapshot: partialInput.provision?.baseImageSnapshot?.enable ? { 
+                        enable: partialInput.provision.baseImageSnapshot.enable,
+                        keepOnDeletion: partialInput.provision.baseImageSnapshot.keepOnDeletion
+                    } : undefined
                 }
             })
         
         return awsInput
         
+    }
+
+    private async promptDedicatedVpc(enabled?: boolean): Promise<boolean> {
+        if (enabled !== undefined) {
+            return enabled
+        }
+
+        return await confirm({
+            message: 'Create a dedicated VPC for this instance? (required if your AWS account has no default VPC)',
+            default: false,
+        })
     }
 
     private async instanceType(region: string, useSpot: boolean, instanceType?: string): Promise<string> {
@@ -165,18 +236,34 @@ export class AwsInputPrompter extends AbstractInputPrompter<AwsCreateCliArgs, Aw
         return selectedInstanceType        
     }
 
-    private async diskSize(diskSize?: number): Promise<number> {
+    private async rootDiskSize(diskSize?: number): Promise<number> {
         if (diskSize) {
             return diskSize;
         }
 
-        const selectedDiskSize = await input({
-            message: 'Enter desired disk size (GB):',
-            default: "100"
-        });
+        // If not overridden, use a static default value
+        // As OS disk size is managed by Cloudy Pad and should not impact user 
+        // except for specific customizations
+        return 20
+    }
 
-        return Number.parseInt(selectedDiskSize)
+    private async dataDiskSize(diskSize?: number): Promise<number> {
+        if (diskSize !== undefined) { // allow 0 meaning explicit no data disk
+            return diskSize
+        }
 
+        let selectedDiskSize: string
+        let parsedDiskSize: number | undefined = undefined
+
+        while (parsedDiskSize === undefined || isNaN(parsedDiskSize)) {
+            selectedDiskSize = await input({
+                message: 'Data disk size in GB (OS will use another independent disk)',
+                default: "100"
+            })
+            parsedDiskSize = Number.parseInt(selectedDiskSize)
+        }
+
+        return parsedDiskSize
     }
 
     private async region(region?: string): Promise<string> {
@@ -197,6 +284,27 @@ export class AwsInputPrompter extends AbstractInputPrompter<AwsCreateCliArgs, Aw
             default: currentAwsRegion,
         })
     }
+
+    private async zone(region: string, zone?: string): Promise<string | undefined> {
+        if (zone) {
+            return zone;
+        }
+
+        const awsClient = new AwsClient("zone-prompt", region)
+        const zones = await awsClient.listAvailabilityZones()
+
+        return await select({
+            message: 'Select an availability zone:',
+            choices: [
+                { name: 'auto (let AWS choose)', value: undefined },
+                ...zones.map(z => ({
+                    name: z,
+                    value: z,
+                }))
+            ],
+            loop: false,
+        })
+    }
 }
 
 export class AwsCliCommandGenerator extends CliCommandGenerator {
@@ -205,7 +313,8 @@ export class AwsCliCommandGenerator extends CliCommandGenerator {
         return this.getBaseCreateCommand(CLOUDYPAD_PROVIDER_AWS)
             .addOption(CLI_OPTION_SPOT)
             .addOption(CLI_OPTION_DISK_SIZE)
-            .addOption(CLI_OPTION_PUBLIC_IP_TYPE)
+            .addOption(CLI_OPTION_ROOT_DISK_SIZE)
+            .addOption(CLI_OPTION_DATA_DISK_SIZE)
             .addOption(CLI_OPTION_COST_ALERT)
             .addOption(CLI_OPTION_COST_LIMIT)
             .addOption(CLI_OPTION_COST_NOTIFICATION_EMAIL)
@@ -214,6 +323,7 @@ export class AwsCliCommandGenerator extends CliCommandGenerator {
             .addOption(CLI_OPTION_SUNSHINE_PASSWORD)
             .addOption(CLI_OPTION_SUNSHINE_IMAGE_TAG)
             .addOption(CLI_OPTION_SUNSHINE_IMAGE_REGISTRY)
+            .addOption(CLI_OPTION_SUNSHINE_MAX_BITRATE_KBPS)
             .addOption(CLI_OPTION_AUTO_STOP_ENABLE)
             .addOption(CLI_OPTION_AUTO_STOP_TIMEOUT)
             .addOption(CLI_OPTION_USE_LOCALE)
@@ -221,9 +331,20 @@ export class AwsCliCommandGenerator extends CliCommandGenerator {
             .addOption(CLI_OPTION_KEYBOARD_MODEL)
             .addOption(CLI_OPTION_KEYBOARD_VARIANT)
             .addOption(CLI_OPTION_KEYBOARD_OPTIONS)
+            .addOption(CLI_OPTION_RATE_LIMIT_MAX_MBPS)
+            .addOption(CLI_OPTION_DATA_DISK_SNAPSHOT_ENABLE)
+            .addOption(CLI_OPTION_BASE_IMAGE_SNAPSHOT_ENABLE)
+            .addOption(CLI_OPTION_KEEP_BASE_IMAGE_ON_DELETION)
+            .addOption(CLI_OPTION_DELETE_INSTANCE_SERVER_ON_STOP)
             .option('--instance-type <type>', 'EC2 instance type')
             .option('--region <region>', 'Region in which to deploy instance')
-            .action(async (cliArgs: AwsCreateCliArgs) => {
+            .option('--zone <zone>', 'Availability zone in which to deploy instance')
+            .option('--image-id <image-id>', 'Existing AMI ID for instance server. Disk size must be equal or greater than image size.')
+            .option('--dedicated-vpc', 'Create a dedicated VPC for this instance')
+            .action(async (rawCliArgs: unknown) => {
+                // Parse raw CLI args using Zod schema early to ensure type safety
+                const cliArgs = AwsCreateCliArgsSchema.parse(rawCliArgs)
+                
                 this.analytics.sendEvent(RUN_COMMAND_CREATE, { provider: CLOUDYPAD_PROVIDER_AWS })
                 
                 try {
@@ -239,11 +360,11 @@ export class AwsCliCommandGenerator extends CliCommandGenerator {
                     console.error("")
                     console.error("Oops, something went wrong 😨 Full error is shown above.")
                     console.error("")
-                    console.error("If you think this is a bug, please file an issue with full error: https://github.com/ap0ught/cloudypad/issues")
+                    console.error("If you think this is a bug, please file an issue with full error: https://github.com/PierreBeucher/cloudypad/issues")
                     console.error("")
                     console.error("⚠️ Your instance was not created successfully. To cleanup resources and avoid leaving orphaned resources which may be charged, run:")
                     console.error("")
-                    console.error("    cloudypad destroy <instance-name>")
+                    console.error(`    cloudypad destroy ${cliArgs.name ?? "<instance-name>"}`)
 
                     handleErrorAnalytics(error)
                     await cleanupAndExit(1)
@@ -254,7 +375,8 @@ export class AwsCliCommandGenerator extends CliCommandGenerator {
     buildUpdateCommand(args: BuildUpdateCommandArgs) {
         return this.getBaseUpdateCommand(CLOUDYPAD_PROVIDER_AWS)
             .addOption(CLI_OPTION_DISK_SIZE)
-            .addOption(CLI_OPTION_PUBLIC_IP_TYPE)
+            .addOption(CLI_OPTION_ROOT_DISK_SIZE)
+            .addOption(CLI_OPTION_DATA_DISK_SIZE)
             .addOption(CLI_OPTION_COST_ALERT)
             .addOption(CLI_OPTION_COST_LIMIT)
             .addOption(CLI_OPTION_COST_NOTIFICATION_EMAIL)
@@ -262,6 +384,7 @@ export class AwsCliCommandGenerator extends CliCommandGenerator {
             .addOption(CLI_OPTION_SUNSHINE_PASSWORD)
             .addOption(CLI_OPTION_SUNSHINE_IMAGE_TAG)
             .addOption(CLI_OPTION_SUNSHINE_IMAGE_REGISTRY)
+            .addOption(CLI_OPTION_SUNSHINE_MAX_BITRATE_KBPS)
             .addOption(CLI_OPTION_AUTO_STOP_ENABLE)
             .addOption(CLI_OPTION_AUTO_STOP_TIMEOUT)
             .addOption(CLI_OPTION_USE_LOCALE)
@@ -269,8 +392,16 @@ export class AwsCliCommandGenerator extends CliCommandGenerator {
             .addOption(CLI_OPTION_KEYBOARD_MODEL)
             .addOption(CLI_OPTION_KEYBOARD_VARIANT)
             .addOption(CLI_OPTION_KEYBOARD_OPTIONS)
+            .addOption(CLI_OPTION_RATE_LIMIT_MAX_MBPS)
+            .addOption(CLI_OPTION_DATA_DISK_SNAPSHOT_ENABLE)
+            .addOption(CLI_OPTION_BASE_IMAGE_SNAPSHOT_ENABLE)
+            .addOption(CLI_OPTION_KEEP_BASE_IMAGE_ON_DELETION)
+            .addOption(CLI_OPTION_DELETE_INSTANCE_SERVER_ON_STOP)
             .option('--instance-type <type>', 'EC2 instance type')
-            .action(async (cliArgs: AwsUpdateCliArgs) => {
+            .action(async (rawCliArgs: unknown) => {
+                // Parse raw CLI args using Zod schema early to ensure type safety
+                const cliArgs = AwsUpdateCliArgsSchema.parse(rawCliArgs)
+                
                 this.analytics.sendEvent(RUN_COMMAND_UPDATE, { provider: CLOUDYPAD_PROVIDER_AWS })
                 
                 try {

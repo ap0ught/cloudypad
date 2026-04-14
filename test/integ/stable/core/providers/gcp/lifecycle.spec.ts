@@ -1,7 +1,7 @@
 import * as assert from 'assert';
 import { GcpClient, GcpInstanceStatus } from '../../../../../../src/providers/gcp/sdk-client';
 import { GcpInstanceStateV1 } from '../../../../../../src/providers/gcp/state';
-import { getIntegTestCoreConfig } from '../../../../utils';
+import { getIntegTestCoreConfig, runVerifyPlaybook } from '../../../../utils';
 import { GcpProviderClient } from '../../../../../../src/providers/gcp/provider';
 import { ServerRunningStatus } from '../../../../../../src/core/runner';
 import { getLogger } from '../../../../../../src/log/utils';
@@ -17,8 +17,8 @@ describe('GCP lifecycle', () => {
     const instanceName = 'test-instance-gcp-lifecycle';
 
     const region = "europe-west4";
-    const zone = "europe-west4-b";
-    const machineType = "n1-standard-8";
+    const zone = "europe-west4-a";
+    const machineType = "n1-standard-4";
     const acceleratorType = "nvidia-tesla-t4";
     const projectId = "crafteo-sandbox";
 
@@ -45,6 +45,11 @@ describe('GCP lifecycle', () => {
         }
         assert.strictEqual(isReady, true);
     }
+
+    async function runVerify(opts: { createDataDiskTestFile?: boolean, checkDataDiskTestFile?: boolean } = {}): Promise<void> {
+        const state = await getCurrentTestState()
+        await runVerifyPlaybook(instanceName, state, opts)
+    }
     
     it('should initialize instance state', async () => {
         assert.strictEqual(currentInstanceName, undefined);
@@ -57,14 +62,26 @@ describe('GCP lifecycle', () => {
             machineType: machineType,
             acceleratorType: acceleratorType,
             diskSize: 100,
+            dataDiskSizeGb: 50,
+            diskType: 'pd-balanced',
+            networkTier: 'STANDARD',
+            nicType: 'auto',
             publicIpType: PUBLIC_IP_TYPE_STATIC,
             projectId: projectId,
             region: region,
             zone: zone,
-            useSpot: true,
+            useSpot: false,
             costAlert: {
                 limit: 2,
                 notificationEmail: "test@test.com"
+            },
+            deleteInstanceServerOnStop: true,
+            dataDiskSnapshot: {
+                enable: true
+            },
+            baseImageSnapshot: {
+                enable: true,
+                keepOnDeletion: false
             }
         }, {
             sunshine: {
@@ -89,8 +106,63 @@ describe('GCP lifecycle', () => {
         const instance = instances.find(instance => instance.name === currentInstanceName);
         assert.ok(instance);
         assert.strictEqual(instance.machineType?.split('/').pop(), machineType);
-    }).timeout(20*60*1000); // 20 minutes timeout as deployment may be long
- 
+    }).timeout(60*60*1000); // 60 minutes timeout as deployment may be long
+
+    it('should wait for instance readiness after deployment', async () => {
+        await waitForInstanceReadiness('deployment');
+    }).timeout(2*60*1000);
+
+    it('should verify instance configuration after deployment', async () => {
+        await runVerify({ createDataDiskTestFile: true })
+    }).timeout(5*60*1000);
+
+    it('should have valid instance outputs', async () => {
+        const gcpClient = await getGcpClient();
+        const state = await getCurrentTestState();
+        
+        assert.ok(state.provision.output?.instanceName);
+        currentInstanceName = state.provision.output.instanceName;
+        
+        const instanceState = await gcpClient.getInstanceState(zone, currentInstanceName);
+        assert.strictEqual(instanceState, GcpInstanceStatus.Running);
+
+        // should have a machineDataDiskLookupId for Ansible data disk mount
+        assert.ok(state.provision.output?.machineDataDiskLookupId, "machineDataDiskLookupId should be in output")
+
+        // Verify data disk exists and ID matches state output
+        assert.ok(state.provision.output?.dataDiskId, 'dataDiskId should be in output');
+        {
+            const dataDiskId = state.provision.output.dataDiskId;
+            const disk = await gcpClient.getDisk(zone, dataDiskId);
+            assert.ok(disk, 'Data disk should exist in GCP');
+            assert.strictEqual(disk.name, dataDiskId, 'Data disk ID should match state output');
+            assert.strictEqual(disk.sizeGb, '50', 'Data disk size should be 50 GB');
+        }
+
+        // Verify root disk exists and ID matches state output
+        assert.ok(state.provision.output?.rootDiskId, 'rootDiskId should be in output');
+        {
+            const rootDiskId = state.provision.output.rootDiskId;
+            const disk = await gcpClient.getDisk(zone, rootDiskId);
+            assert.ok(disk, 'Root disk should exist in GCP');
+            assert.strictEqual(disk.name, rootDiskId, 'Root disk ID should match state output');
+        }
+
+        // Verify base image exists and ID matches state output
+        assert.ok(state.provision.output?.baseImageId, 'baseImageId should be in output');
+        const baseImageId = state.provision.output.baseImageId;
+        const image = await gcpClient.getImage(baseImageId);
+        assert.ok(image, 'Base image should exist in GCP');
+        
+        // Normalize both values - extract image name from URI if needed
+        // State may store full URI (projects/{projectId}/global/images/{imageName}) or just the name
+        const stateImageName = baseImageId.includes('/')
+            ? baseImageId.split('/').pop()!
+            : baseImageId;
+        assert.strictEqual(image.name, stateImageName, 'Base image ID should match state output');
+        assert.strictEqual(image.status, 'READY', 'Base image should be ready');
+    }).timeout(10000);
+
     it('should update instance', async () => {
         const instanceUpdater = gcpProviderClient.getInstanceUpdater();
         await instanceUpdater.updateStateOnly({
@@ -114,23 +186,12 @@ describe('GCP lifecycle', () => {
         assert.ok(instance);
         assert.strictEqual(instance.machineType?.split('/').pop(), "n1-standard-4");
 
+        assert.ok(state.provision.output?.dataDiskId);
+        const dataDisk = await gcpClient.getDisk(zone, state.provision.output.dataDiskId);
+        assert.ok(dataDisk);
+        assert.strictEqual(dataDisk.sizeGb, 50);
+
     }).timeout(15*60*1000);
-
-    it('should have a valid instance server output with existing server', async () => {
-        const state = await getCurrentTestState();
-        
-        assert.ok(state.provision.output?.instanceName);
-        currentInstanceName = state.provision.output.instanceName;
-
-        const gcpClient = await getGcpClient();
-        
-        const instanceState = await gcpClient.getInstanceState(zone, currentInstanceName);
-        assert.strictEqual(instanceState, GcpInstanceStatus.Running);
-    }).timeout(2*60*1000);
-
-    it('should wait for instance readiness after deployment', async () => {
-        await waitForInstanceReadiness('deployment');
-    }).timeout(2*60*1000);
 
     // run twice for idempotency
     for (let i = 0; i < 2; i++) { 
@@ -141,10 +202,25 @@ describe('GCP lifecycle', () => {
 
             const instanceStatus = await instanceManager.getInstanceStatus();
 
-            assert.strictEqual(instanceStatus.configured, true);
-            assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Stopped);
+            assert.strictEqual(instanceStatus.configured, false);
+            assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Unknown);
+
+            const state = await getCurrentTestState();
+            assert.strictEqual(state.provision.output?.dataDiskId, undefined, "dataDiskId should be undefined after stop");
         }).timeout(20*60*1000); // 20 in timeout as stopping n1 instances is very long
     }
+
+    it('should have created data disk snapshot after stop', async () => {
+        const state = await getCurrentTestState();
+        
+        assert.ok(state.provision.output?.dataDiskSnapshotId, 'Data disk snapshot ID should be set');
+        
+        const gcpClient = await getGcpClient();
+        const snapshot = await gcpClient.getSnapshot(state.provision.output.dataDiskSnapshotId);
+        
+        assert.ok(snapshot, 'Data disk snapshot should exist in GCP');
+        assert.strictEqual(snapshot.status, 'READY', 'Snapshot should be ready');
+    }).timeout(10000);
 
     // run twice for idempotency
     for (let i = 0; i < 2; i++) { 
@@ -162,8 +238,16 @@ describe('GCP lifecycle', () => {
             assert.ok(state.provision.output?.instanceName);
 
             currentInstanceName = state.provision.output.instanceName;
-        }).timeout(2*60*1000);
+        }).timeout(10*60*1000);
     }
+
+    it('should wait for instance readiness after start', async () => {
+        await waitForInstanceReadiness('start');
+    }).timeout(2*60*1000);
+
+    it('should verify instance configuration after stop/start', async () => {
+        await runVerify({ checkDataDiskTestFile: true })
+    }).timeout(5*60*1000);
 
     it('should restart instance', async () => {
 
@@ -179,7 +263,7 @@ describe('GCP lifecycle', () => {
         assert.strictEqual(instanceStatus.configured, true);
         assert.strictEqual(instanceStatus.provisioned, true);
         assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Running);
-    }).timeout(2*60*1000);
+    }).timeout(10*60*1000);
 
     it('should wait for instance readiness after restart', async () => {
         await waitForInstanceReadiness('restart');

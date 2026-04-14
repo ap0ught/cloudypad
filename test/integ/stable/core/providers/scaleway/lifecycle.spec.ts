@@ -1,7 +1,7 @@
 import * as assert from 'assert'
 import { ScalewayClient, ScalewayServerState } from '../../../../../../src/providers/scaleway/sdk-client'
 import { ScalewayInstanceStateV1 } from '../../../../../../src/providers/scaleway/state'
-import { getIntegTestCoreConfig } from '../../../../utils'
+import { getIntegTestCoreConfig, runVerifyPlaybook } from '../../../../utils'
 import { ScalewayProviderClient } from '../../../../../../src/providers/scaleway/provider'
 import { ServerRunningStatus } from '../../../../../../src/core/runner'
 import { getLogger } from '../../../../../../src/log/utils'
@@ -32,6 +32,11 @@ describe('Scaleway lifecycle', () => {
             zone: zone,
         })
     }
+
+    async function runVerify(opts: { createDataDiskTestFile?: boolean, checkDataDiskTestFile?: boolean } = {}): Promise<void> {
+        const state = await getCurrentTestState()
+        await runVerifyPlaybook(instanceName, state, opts)
+    }
     
     it('should initialize instance state', async () => {
 
@@ -48,12 +53,23 @@ describe('Scaleway lifecycle', () => {
                 instanceType: "L4-1-24G",
                 diskSizeGb: 30,
                 dataDiskSizeGb: 50,
+                baseImageSnapshot: {
+                    enable: true,
+                },
+                dataDiskSnapshot: {
+                    enable: true,
+                },
+                deleteInstanceServerOnStop: true,
             }, {
                 sunshine: {
                     enable: true,
                     username: "sunshine",
-                    passwordBase64: Buffer.from("Sunshine!").toString('base64')
-                }, 
+                    passwordBase64: Buffer.from("Sunshine!").toString('base64'),
+                    imageTag: "dev"
+                },
+                ratelimit: {
+                    maxMbps: 50,
+                },
             })
     })
 
@@ -71,12 +87,53 @@ describe('Scaleway lifecycle', () => {
         assert.strictEqual(serverData?.commercialType, "L4-1-24G")
     }).timeout(20*60*1000) // 20 minutes timeout
 
+    it('should have valid instance outputs', async () => {
+        const scalewayClient = getScalewayClient()
+        const state = await getCurrentTestState()
+
+        // should have a machineDataDiskLookupId for Ansible data disk mount
+        assert.ok(state.provision.output?.machineDataDiskLookupId, "machineDataDiskLookupId should be in output")
+
+        // Helper to extract ID from zone-prefixed ID or plain ID
+        const extractId = (id: string): string => id.includes('/') ? id.split('/').pop()! : id
+
+        // Verify data disk exists and ID matches state output
+        assert.ok(state.provision.output?.dataDiskId, "dataDiskId should be in output")
+        const dataDiskId = extractId(state.provision.output.dataDiskId)
+        const dataVolume = await scalewayClient.getVolume({ zone: zone, volumeId: dataDiskId })
+        assert.ok(dataVolume, "Data disk should exist in Scaleway")
+        const dataVolumeId = extractId(dataVolume.id || '')
+        assert.strictEqual(dataVolumeId, dataDiskId, "Data disk ID should match state output")
+
+        // Verify root disk exists and ID matches state output
+        assert.ok(state.provision.output?.rootDiskId, "rootDiskId should be in output")
+        const rootDiskId = extractId(state.provision.output.rootDiskId)
+        const rootVolume = await scalewayClient.getVolume({ zone: zone, volumeId: rootDiskId })
+        assert.ok(rootVolume, "Root disk should exist in Scaleway")
+        const rootVolumeId = extractId(rootVolume.id || '')
+        assert.strictEqual(rootVolumeId, rootDiskId, "Root disk ID should match state output")
+
+        // Verify base image exists and ID matches state output
+        assert.ok(state.provision.output?.baseImageId, "baseImageId should be in output")
+        const baseImageId = extractId(state.provision.output.baseImageId)
+        const image = await scalewayClient.getImage({ zone: zone, imageId: baseImageId })
+        assert.ok(image, "Base image should exist in Scaleway")
+        const imageId = extractId(image.id || '')
+        assert.strictEqual(imageId, baseImageId, "Base image ID should match state output")
+    }).timeout(10000)
+
+    it('should verify instance configuration after deployment', async () => {
+        await runVerify({ createDataDiskTestFile: true })
+    }).timeout(5*60*1000) // 5 minutes timeout
+
     it('should update instance', async () => {
         const instanceUpdater = scalewayProviderClient.getInstanceUpdater()
         await instanceUpdater.updateStateOnly({
             instanceName: instanceName,
             provisionInputs: {
+                // update instance type and disk size
                 instanceType: "L40S-1-48G",
+                dataDiskSizeGb: 55,
             }, 
         })
 
@@ -91,6 +148,12 @@ describe('Scaleway lifecycle', () => {
 
         const serverData = await scalewayClient.getRawServerData(currentInstanceServerId)
         assert.strictEqual(serverData?.commercialType, "L40S-1-48G")
+
+        const dataDiskId = state.provision.output?.machineDataDiskLookupId
+        assert.ok(dataDiskId)
+
+        const volume = await scalewayClient.getVolume({ zone: zone, volumeId: dataDiskId })
+        assert.strictEqual(String(volume?.size).substring(0, 2), "55")
 
     }).timeout(20*60*1000) // 20 minutes timeout
 
@@ -114,16 +177,13 @@ describe('Scaleway lifecycle', () => {
             await instanceManager.stop({ wait: true })
 
             const instanceStatus = await instanceManager.getInstanceStatus()
-            assert.strictEqual(instanceStatus.configured, true)
-            assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Stopped)
+            assert.strictEqual(instanceStatus.configured, false)
+            assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Unknown)
 
             const state = await getCurrentTestState()
-            assert.strictEqual(state.provision.output?.instanceServerId, currentInstanceServerId)
-
-            const scalewayClient = getScalewayClient()
-            const instances = await scalewayClient.listInstances()
-            const instance = instances.find(instance => instance.id === currentInstanceServerId)
-            assert.ok(instance)
+            assert.strictEqual(state.provision.output?.instanceServerId, undefined, "instanceServerId should be undefined after stop")
+            assert.strictEqual(state.provision.output?.dataDiskId, undefined, "dataDiskId should be undefined after stop")
+            assert.ok(state.provision.output?.dataDiskSnapshotId, "dataDiskSnapshotId should be in output after stop")
         }).timeout(120000)
     }
 
@@ -140,7 +200,9 @@ describe('Scaleway lifecycle', () => {
             assert.strictEqual(instanceStatus.serverStatus, ServerRunningStatus.Running)
 
             const state = await getCurrentTestState()
-            assert.ok(state.provision.output?.instanceServerId)
+            assert.ok(state.provision.output?.instanceServerId, "instanceServerId should exist after start")
+            assert.ok(state.provision.output?.dataDiskId, "dataDiskId should exist after start")
+            assert.ok(state.provision.output?.dataDiskSnapshotId, "dataDiskSnapshotId should exist after start")
 
             currentInstanceServerId = state.provision.output.instanceServerId
         }).timeout(120000)
@@ -159,6 +221,10 @@ describe('Scaleway lifecycle', () => {
         assert.strictEqual(isReady, true)
 
     }).timeout(120000)
+
+    it('should verify instance configuration after stop/start', async () => {
+        await runVerify({ checkDataDiskTestFile: true })
+    }).timeout(5*60*1000) // 5 minutes timeout
 
     it('should restart instance without deleting or re-provisioning', async () => {
 
